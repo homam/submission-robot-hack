@@ -16,23 +16,23 @@ Run the test first, because it automatically creates the necessary SQL tables (`
 ## Usage:
 
 ```bash
-curl "http://localhost:3001/submit_msisdn/m.mobiworld.biz/gr/antivirus-kspr/1/?msisdn=6972865341"
+curl "http://localhost:3001/submit_msisdn/m.mobiworld.biz/gr/mobilearts/841/?msisdn=306972865041"
 
-curl "http://localhost:3000/submit_pin/?sid=10&pin=9196"
+curl "http://localhost:3001/submit_pin/?sid=kw==&pin=5192"
 ```
 
 ## How It works
 
 ```
 MSISDN Submission:
-http://m.mobiworld.biz/gr/antivirus-kspr?country=gr&handle=antivirus-kspr&device=smart&msisdnSubmitted=Y&incentivizedCheckbox=Y&legalCheckbox=N&legalCheckbox=Y&op_confirmCheckbox=N&offer=1&msisdn%5B0%5D=6949041021
+http://m.mobiworld.biz/gr/mobilearts?country=gr&handle=mobilearts&device=smart&msisdnSubmitted=Y&incentivizedCheckbox=Y&legalCheckbox=N&legalCheckbox=Y&op_confirmCheckbox=N&offer=1&msisdn%5B0%5D=6972865041
 
 Response is invalid if it contains "numeric-field msisdn msisdn-input msisdn-input-0"
 
 ----
 
 PIN Submission:
-http://m.mobiworld.biz/gr/antivirus-kspr?country=gr&handle=antivirus-kspr&offer=1&device=smart&gaclientid=&msisdnSubmitted=Y&msisdn%5B0%5D=6972865367&incentivizedCheckbox=Y&legalCheckbox=Y&op_confirmCheckbox=N&identified=1&operator=GR_VODAFONE&rid=243536df8b33478dab05d132c8f05766&pinSubmitted=Y&pin=7826
+http://m.mobiworld.biz/gr/mobilearts?country=gr&handle=mobilearts&offer=1&device=smart&gaclientid=&msisdnSubmitted=Y&msisdn%5B0%5D=6972865367&incentivizedCheckbox=Y&legalCheckbox=Y&op_confirmCheckbox=N&identified=1&operator=GR_VODAFONE&rid=243536df8b33478dab05d132c8f05766&pinSubmitted=Y&pin=7826
 
 Response is invalid if it contains "numeric-field pin pin-input"
 ```

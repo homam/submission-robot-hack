@@ -1,8 +1,12 @@
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
 
 module Sam.Robot
 (
     submitMSISDN, submitPIN, runSubmission, C.HttpException (..), SubmissionError (..)
+  , SubmissionErrorType, toSubmissionErrorType
   , main -- for demonstration purpose only
 ) where
 
@@ -15,12 +19,29 @@ import           Data.Monoid                ((<>))
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as E
 import qualified Data.Text.IO               as T
+import           GHC.Generics               (Generic)
 import qualified Network.HTTP.Client        as C
 import qualified Network.HTTP.Types.URI     as U
 import qualified Network.URI                as U
+---
+import qualified Data.Aeson                 as A
+import           Database.Persist.TH
+
 
 type Submission e b = X.ExceptT (SubmissionError e b) IO
-data SubmissionError e b = NetworkError e | ValidationError b
+data SubmissionError e b = NetworkError e | ValidationError b | AlreadySubscribed b
+
+data SubmissionErrorType = SENetworkError | SEInvalidMSISDN | SEAlreadySubscribed deriving (Show, Read, Enum, Eq, Ord, Bounded, Generic, A.ToJSON, A.FromJSON)
+
+toSubmissionErrorType :: SubmissionError e b -> SubmissionErrorType
+toSubmissionErrorType (NetworkError      _) = SENetworkError
+toSubmissionErrorType (ValidationError _)   = SEInvalidMSISDN
+toSubmissionErrorType (AlreadySubscribed _) = SEAlreadySubscribed
+
+derivePersistField "SubmissionErrorType"
+
+
+
 
 runSubmission :: Submission e b a -> IO (Either (SubmissionError e b) a)
 runSubmission = X.runExceptT
@@ -38,18 +59,37 @@ callSAM url = do
 submitMSISDN' :: String -> String -> String -> Int -> String -> Submission C.HttpException b (U.URI, BS.ByteString)
 submitMSISDN' domain handle country offer msisdn = callSAM $ "http://" <> domain <> "/" <> country <> "/" <> handle <> "?country=" <> country <> "&handle=" <> handle <> "&offer=" <> show offer <> "&device=smart&msisdnSubmitted=Y&incentivizedCheckbox=Y&legalCheckbox=N&legalCheckbox=Y&op_confirmCheckbox=N&msisdn%5B0%5D=" <> msisdn
 
-validateSubmission :: Bool -> T.Text -> (b, BS.ByteString) -> Submission C.HttpException BS.ByteString b
-validateSubmission includes search (url, bs) = if (`op` T.empty) $ snd $ T.breakOn search (E.decodeUtf8 bs)
+validateSubmission
+  :: (BS.ByteString -> T.Text -> Maybe (SubmissionError C.HttpException BS.ByteString))
+  -> Bool
+  -> T.Text
+  -> (b, BS.ByteString)
+  -> Submission C.HttpException BS.ByteString b
+validateSubmission customCheck includes search (url, bs) = case customCheck bs content of
+  Just m -> X.throwE m
+  Nothing -> if (`op` T.empty) $ snd $ T.breakOn search content
     then X.throwE (ValidationError bs)
     else return url
-    where
-      op = if includes then (==) else (/=)
+  where
+    op = if includes then (==) else (/=)
+    content = E.decodeUtf8 bs
+
+
+isAlreadySubscribed :: T.Text -> Bool
+isAlreadySubscribed = T.isInfixOf "Θα λάβεις τώρα τον προσωπικό"
 
 validateMSISDNSubmission :: (b, BS.ByteString) -> Submission C.HttpException BS.ByteString b
-validateMSISDNSubmission = validateSubmission True "numeric-field pin pin-input"
+validateMSISDNSubmission = validateSubmission
+  ( \bs content -> if isAlreadySubscribed content
+    then Just (AlreadySubscribed bs)
+    else Nothing
+  )
+  True
+  "numeric-field pin pin-input"
+
 
 validatePINSubmission :: (b, BS.ByteString) -> Submission C.HttpException BS.ByteString b
-validatePINSubmission = validateSubmission False "numeric-field pin pin-input"
+validatePINSubmission = validateSubmission (\_ _ -> Nothing) False "numeric-field pin pin-input"
 
 submitPIN' :: BS.ByteString -> U.URI -> Submission C.HttpException b (U.URI, BS.ByteString)
 submitPIN' pin url = callSAM $ (U.uriToString id $ makePINUrl pin url) ""
@@ -101,4 +141,5 @@ main = do
   case finalResult of
     Left (NetworkError e) -> putStrLn "NetworkError" >> print e
     Left (ValidationError bs) -> putStrLn "Validation Error" >> T.writeFile "/Users/homam/temp/submissoinf.html" (E.decodeUtf8 bs)
+    Left (AlreadySubscribed bs) -> putStrLn "Validation Error" >> T.writeFile "/Users/homam/temp/submissoinf.html" (E.decodeUtf8 bs)
     Right url -> putStrLn "Success" >> print url

@@ -7,16 +7,22 @@ where
 
 import           Control.Concurrent.MVar
 import           Control.Monad           (void)
+import qualified Data.Aeson              as A
 import qualified Data.ByteString.Char8   as Char8
+import qualified Data.ByteString.Lazy    as BL
 import qualified Data.List               as List
+import           Data.Maybe              (maybe)
 import           Data.Monoid             ((<>))
-import           Data.Text               (Text, pack)
+import           Data.Text               (Text, pack, unpack)
 import qualified Data.Text.Encoding      as E
 import qualified Database.Redis          as R
 import qualified Network.Wai.Test        as WT
 import qualified System.Environment      as Env
 import           Test.Hspec
+import           Test.Hspec.Expectations
 import           Test.Hspec.Wai
+import qualified Web.JewlModel           as JM
+import           Web.Localization        (decrypt')
 import qualified Web.Scotty.Trans        as Trans
 import           Web.Visit
 import qualified Web.WebM                as W
@@ -31,6 +37,25 @@ getHeader name (WT.SResponse _ h _) = snd <$> List.find ((== name) . fst) h
 getHeaderM name r = case getHeader name r of
   Just v  -> return v
   Nothing -> error "Header not found"
+
+getResponseBody (WT.SResponse s h b) = b
+
+test200
+  :: Text
+  -> (Char8.ByteString -> WaiSession WT.SResponse)
+  -> WaiSession WT.SResponse
+test200 url f = do
+  r <- f (E.encodeUtf8 url)
+  liftIO $ printSResponseBody r
+  shouldRespondWith (return r) 200
+  return r
+
+testPost200 :: Text -> BL.ByteString -> WaiSession WT.SResponse
+testPost200 url body = test200 url (`post`body)
+
+testGet200 :: Text -> WaiSession WT.SResponse
+testGet200 url = test200 url get
+
 
 
 -- WebMApp
@@ -50,24 +75,41 @@ testRequest200 url = do
   liftIO $ printSResponseBody r
   return r
 
-addSubmissionTest :: Text -> WaiSession Int
+addSubmissionTest :: Text -> WaiSession Text
 addSubmissionTest url = do
-  r <- get $ E.encodeUtf8 url
-  shouldRespondWith (return r) 200
-  liftIO $ printSResponseBody r
-  read . Char8.unpack <$> getHeaderM "X-Scotch-SubmissionId" r
+  -- r <- get $ E.encodeUtf8 url
+  -- shouldRespondWith (return r) 200
+  -- liftIO $ printSResponseBody r
 
-addMSISDNSubmissionTest :: Text -> Text -> Text -> Int -> Text -> WaiSession Int
+  -- let r' = getResponseBody r
+  r' <- getResponseBody <$> testGet200 url
+  case (A.decode r' :: Maybe SubmissionResult) of
+    Nothing -> do
+        liftIO $ expectationFailure $ "Unable to parse the response from check_msisdn_active_subscription \n" <> show r'
+        return "ERROR"
+    Just s -> do
+      let hsid = submissionId s
+      let msid = decrypt' $ Char8.pack $ unpack hsid
+      liftIO $
+        putStrLn $ "submissionId: " <> show msid <> ", " <> unpack hsid
+      return hsid
+
+
+addMSISDNSubmissionTest :: Text -> Text -> Text -> Int -> Text -> WaiSession Text
 addMSISDNSubmissionTest domain country handle offer msisdn =
   addSubmissionTest ("/submit_msisdn/" <> domain <> "/" <> country <> "/" <> handle <> "/" <> pack (show offer) <> "/?msisdn=" <> msisdn)
 
-addPINSubmissionTest :: Int -> Text -> WaiSession Int
+addPINSubmissionTest :: Text -> Text -> WaiSession Text
 addPINSubmissionTest sid pin =
-  addSubmissionTest ("/submit_pin/?sid=" <> pack (show sid) <> "&pin=" <> pin)
+  addSubmissionTest ("/submit_pin/?sid=" <> sid <> "&pin=" <> pin)
 
 checkMSISDNTest :: Text -> Text -> WaiSession ()
-checkMSISDNTest country msisdn =
-  void $ testRequest200 ("/check_msisdn_active_subscription/" <> country <> "/?msisdn=" <> msisdn)
+checkMSISDNTest country msisdn = do
+  r <- getResponseBody <$> testRequest200 ("/check_msisdn_active_subscription/" <> country <> "/?msisdn=" <> msisdn)
+  maybe
+    (liftIO $ expectationFailure $ "Unable to parse the response from check_msisdn_active_subscription \n" <> show r)
+    (const $ return ())
+    (A.decode r :: Maybe JM.FinalResult)
 
 
 
@@ -98,16 +140,16 @@ testAddPINSubmission sync pin =
 testCheckMSISDN country msisdn =
   describe "Testing Check MSISDN"
     $ withAppT myApp
-    $ it "must return Just"
-    $
-        checkMSISDNTest country msisdn
+    $ it "must return a valid FinalResult JSON object"
+    $ checkMSISDNTest country msisdn
 
 
 main :: IO ()
 main = do
   sync <- newEmptyMVar
   hspec $ do
-    testMigrations
-    testCheckMSISDN "GR" "6972865341"
-    testAddMSISDNSubmission sync "6972865344"
+    -- testMigrations
+    -- testCheckMSISDN "GR" "6972865341"
+    testAddMSISDNSubmission sync "306942868335"
+
     testAddPINSubmission sync "1234"
