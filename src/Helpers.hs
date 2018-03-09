@@ -16,7 +16,7 @@ import           Data.Maybe                       (fromMaybe)
 import           Data.Text                        (unpack)
 import qualified Data.Text                        as T
 import qualified Data.Text.Encoding               as Encoding
-import           Data.Typeable.Internal           (Typeable)
+import           Data.Typeable                    (Typeable)
 import           Database.Persist
 import           Database.Persist.Postgresql.Json
 import           Database.Persist.Sql

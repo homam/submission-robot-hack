@@ -15,23 +15,22 @@ where
 import           Control.Arrow
 import           Control.Monad             (join)
 import           Control.Monad.IO.Class    (liftIO)
+import           Control.Monad.Zip         (mzip)
 import qualified Data.Aeson                as A
 import qualified Data.Aeson.Types          as AT
 import qualified Data.ByteString           as BS
 import qualified Data.HashMap.Strict       as M
 import           Data.Maybe                (maybe)
 import           Data.Monoid               ((<>))
-import           Data.Text                 (Text, pack, unpack)
+import           Data.Text                 (Text, pack, toLower, unpack)
 import qualified Data.Text.Encoding        as E
 import qualified Data.Text.Lazy            as TL
 import           GHC.Generics
 import           Network.HTTP.Types.Status (status500)
 import qualified Network.URI               as U
-import           Numeric                   (readHex, showHex)
 import qualified Sam.Robot                 as S
 import qualified Web.JewlModel             as JM
-import           Web.Localization          (decrypt', encrypt, encrypt',
-                                            toLocalMSISDN)
+import           Web.Localization          (decrypt', encrypt', toLocalMSISDN)
 import           Web.Model
 import           Web.WebM
 
@@ -92,17 +91,25 @@ pinSubmissionWeb =
 
 pinSubmissionAction :: Int -> Text -> WebMAction ()
 pinSubmissionAction sid pin = do
-  submission <- getMSISDNSubmission sid
-  case (U.parseURI . unpack) =<< mSISDNSubmissionFinalUrl =<< submission of
-    Just url -> do
+  submission' <- getMSISDNSubmission sid
+  let url' = (U.parseURI . unpack) =<< mSISDNSubmissionFinalUrl =<< submission'
+  case mzip url' submission' of
+    Just (url, submission) -> do
+      let country = mSISDNSubmissionCountry submission
       res <- liftIO $ S.runSubmission $ S.submitPIN (E.encodeUtf8 pin) url
       sid <- fromIntegral . fromSqlKey <$> addPINSubmission sid pin res
       let epsid =  encrypt' . show $ sid
       addScotchHeader "SubmissionId" (TL.pack epsid)
-      json FinalResult { finalUrl = "http://gr.mobiworldbiz.com/?uid=fdf098fcc6&uip=2.84.0.0", finalSubmissionResult = toSubmissionResult (pack epsid) res }
+      json FinalResult { finalUrl = finalUrl' country , finalSubmissionResult = toSubmissionResult (pack epsid) res }
     Nothing ->
-      let err = TL.pack $ maybe "MSISDN Submission" (const "Final URL") submission in
+      let err = TL.pack $ maybe "MSISDN Submission" (const "Final URL") submission' in
       status status500 >> text ("No " <> err <> " was Found for the Given sid: " <> TL.pack (show sid))
+  where
+    finalUrl' = finalUrl'' . toLower where
+      finalUrl'' "gr" = "http://gr.mobiworldbiz.com/?uid=fdf098fcc6&uip=2.84.0.0"
+      finalUrl'' "iq" = "http://iq.mobbfun.com/?uid=fdf098fcc6"
+      finalUrl''  _   = "http://gr.mobiworldbiz.com/?uid=fdf098fcc6&uip=2.84.0.0"
+
 
 
 msisdnExistsWeb :: WebMApp ()

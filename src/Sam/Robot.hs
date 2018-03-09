@@ -25,18 +25,21 @@ import qualified Network.HTTP.Types.URI     as U
 import qualified Network.URI                as U
 ---
 import qualified Data.Aeson                 as A
+import qualified Data.CaseInsensitive       as CI
 import           Database.Persist.TH
+import qualified Network.HTTP.Types.Header  as Header
 
 
 type Submission e b = X.ExceptT (SubmissionError e b) IO
-data SubmissionError e b = NetworkError e | ValidationError b | AlreadySubscribed b
+data SubmissionError e b = NetworkError e | ValidationError b | AlreadySubscribed b | ExceededMSISDNSubmissions b
 
-data SubmissionErrorType = SENetworkError | SEInvalidMSISDN | SEAlreadySubscribed deriving (Show, Read, Enum, Eq, Ord, Bounded, Generic, A.ToJSON, A.FromJSON)
+data SubmissionErrorType = SENetworkError | SEInvalidMSISDN | SEAlreadySubscribed | SEExceededMSISDNSubmissions deriving (Show, Read, Enum, Eq, Ord, Bounded, Generic, A.ToJSON, A.FromJSON)
 
 toSubmissionErrorType :: SubmissionError e b -> SubmissionErrorType
-toSubmissionErrorType (NetworkError      _) = SENetworkError
-toSubmissionErrorType (ValidationError _)   = SEInvalidMSISDN
-toSubmissionErrorType (AlreadySubscribed _) = SEAlreadySubscribed
+toSubmissionErrorType (NetworkError      _)         = SENetworkError
+toSubmissionErrorType (ValidationError _)           = SEInvalidMSISDN
+toSubmissionErrorType (AlreadySubscribed _)         = SEAlreadySubscribed
+toSubmissionErrorType (ExceededMSISDNSubmissions _) = SEAlreadySubscribed
 
 derivePersistField "SubmissionErrorType"
 
@@ -48,16 +51,20 @@ runSubmission = X.runExceptT
 
 callSAM :: String -> Submission C.HttpException b (U.URI, BS.ByteString)
 callSAM url = do
+  liftIO $ putStrLn url
   x <- liftIO $ try $ join $ C.withResponseHistory
-      <$> C.parseRequest url
+      <$> fmap (\ req -> req {C.requestHeaders = [(Header.hUserAgent, "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36")] ++ C.requestHeaders req }) (C.parseRequest url)
       <*> C.newManager C.defaultManagerSettings
-      <*> return (\hr -> (BS.concat <$> C.brConsume (C.responseBody $ C.hrFinalResponse hr) ) >>= \b -> return (C.getUri $ C.hrFinalRequest hr, b))
+      <*> return (\hr ->
+        (BS.concat <$> C.brConsume (C.responseBody $ C.hrFinalResponse hr) ) >>= \b -> return (C.getUri $ C.hrFinalRequest hr, b)
+      )
   case x of
     Left e  -> X.throwE (NetworkError e)
     Right r -> return r
 
+-- http://n.mobfun.co/iq/mobile-arts?country=iq&handle=mobile-arts&offer=841&msisdnSubmitted=Y&msisdn%5B0%5D=7814237252&legalCheckbox=Y&incentivizedCheckbox=Y&op_confirmCheckbox=N&identified=1
 submitMSISDN' :: String -> String -> String -> Int -> String -> Submission C.HttpException b (U.URI, BS.ByteString)
-submitMSISDN' domain handle country offer msisdn = callSAM $ "http://" <> domain <> "/" <> country <> "/" <> handle <> "?country=" <> country <> "&handle=" <> handle <> "&offer=" <> show offer <> "&device=smart&msisdnSubmitted=Y&incentivizedCheckbox=Y&legalCheckbox=N&legalCheckbox=Y&op_confirmCheckbox=N&msisdn%5B0%5D=" <> msisdn
+submitMSISDN' domain handle country offer msisdn = callSAM $ "http://" <> domain <> "/" <> country <> "/" <> handle <> "?country=" <> country <> "&handle=" <> handle <> "&offer=" <> show offer <> "&smart=1&identified=1&msisdnSubmitted=Y&incentivizedCheckbox=Y&legalCheckbox=Y&op_confirmCheckbox=N&msisdn%5B0%5D=" <> msisdn
 
 validateSubmission
   :: (BS.ByteString -> T.Text -> Maybe (SubmissionError C.HttpException BS.ByteString))
@@ -78,11 +85,16 @@ validateSubmission customCheck includes search (url, bs) = case customCheck bs c
 isAlreadySubscribed :: T.Text -> Bool
 isAlreadySubscribed = T.isInfixOf "Θα λάβεις τώρα τον προσωπικό"
 
+isExceededMSISDNSubmissions :: T.Text -> Bool
+isExceededMSISDNSubmissions = T.isInfixOf "لقد تجاوزت الحد"
+
 validateMSISDNSubmission :: (b, BS.ByteString) -> Submission C.HttpException BS.ByteString b
 validateMSISDNSubmission = validateSubmission
   ( \bs content -> if isAlreadySubscribed content
     then Just (AlreadySubscribed bs)
-    else Nothing
+    else if isExceededMSISDNSubmissions content
+      then Just (ExceededMSISDNSubmissions bs)
+      else Nothing
   )
   True
   "numeric-field pin pin-input"
@@ -129,7 +141,7 @@ main = do
     msisdn <- liftIO $ do
       putStrLn "MSISDN?"
       readLn
-    url <- validateMSISDNSubmission =<< submitMSISDN' "m.mobiworld.biz" "antivirus-kspr" "gr" 1 msisdn
+    url <- validateMSISDNSubmission =<< submitMSISDN' "n.mobfun.co" "mobile-arts" "iq" 841 msisdn
     liftIO $ putStrLn "MSISDN Submission Successful"
     pin <- liftIO $ do
       putStrLn "PIN?"
@@ -141,5 +153,6 @@ main = do
   case finalResult of
     Left (NetworkError e) -> putStrLn "NetworkError" >> print e
     Left (ValidationError bs) -> putStrLn "Validation Error" >> T.writeFile "/Users/homam/temp/submissoinf.html" (E.decodeUtf8 bs)
-    Left (AlreadySubscribed bs) -> putStrLn "Validation Error" >> T.writeFile "/Users/homam/temp/submissoinf.html" (E.decodeUtf8 bs)
+    Left (AlreadySubscribed bs) -> putStrLn "AlreadySubscribed Error" >> T.writeFile "/Users/homam/temp/submissoinf.html" (E.decodeUtf8 bs)
+    Left (ExceededMSISDNSubmissions bs) -> putStrLn "ExceededMSISDNSubmissions Error" >> T.writeFile "/Users/homam/temp/submissoinf.html" (E.decodeUtf8 bs)
     Right url -> putStrLn "Success" >> print url
