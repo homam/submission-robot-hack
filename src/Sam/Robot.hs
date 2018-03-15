@@ -39,7 +39,7 @@ toSubmissionErrorType :: SubmissionError e b -> SubmissionErrorType
 toSubmissionErrorType (NetworkError      _)         = SENetworkError
 toSubmissionErrorType (ValidationError _)           = SEInvalidMSISDN
 toSubmissionErrorType (AlreadySubscribed _)         = SEAlreadySubscribed
-toSubmissionErrorType (ExceededMSISDNSubmissions _) = SEAlreadySubscribed
+toSubmissionErrorType (ExceededMSISDNSubmissions _) = SEExceededMSISDNSubmissions
 
 derivePersistField "SubmissionErrorType"
 
