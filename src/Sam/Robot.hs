@@ -31,7 +31,7 @@ import qualified Network.HTTP.Types.Header  as Header
 
 
 type Submission e b = X.ExceptT (SubmissionError e b) IO
-data SubmissionError e b = NetworkError e | ValidationError b | AlreadySubscribed b | ExceededMSISDNSubmissions b
+data SubmissionError e b = NetworkError e | ValidationError b | AlreadySubscribed b | ExceededMSISDNSubmissions b deriving Show
 
 data SubmissionErrorType = SENetworkError | SEInvalidMSISDN | SEAlreadySubscribed | SEExceededMSISDNSubmissions deriving (Show, Read, Enum, Eq, Ord, Bounded, Generic, A.ToJSON, A.FromJSON)
 
@@ -64,7 +64,11 @@ callSAM url = do
 
 -- http://n.mobfun.co/iq/mobile-arts?country=iq&handle=mobile-arts&offer=841&msisdnSubmitted=Y&msisdn%5B0%5D=7814237252&legalCheckbox=Y&incentivizedCheckbox=Y&op_confirmCheckbox=N&identified=1
 submitMSISDN' :: String -> String -> String -> Int -> String -> Submission C.HttpException b (U.URI, BS.ByteString)
-submitMSISDN' domain handle country offer msisdn = callSAM $ "http://" <> domain <> "/" <> country <> "/" <> handle <> "?country=" <> country <> "&handle=" <> handle <> "&offer=" <> show offer <> "&smart=1&identified=1&msisdnSubmitted=Y&incentivizedCheckbox=Y&legalCheckbox=Y&op_confirmCheckbox=N&msisdn%5B0%5D=" <> msisdn
+submitMSISDN' domain handle country offer msisdn =
+  callSAM $ "http://" <> domain <> "/" <> country <> "/" <> handle <> "?country=" <> country <> "&handle=" <> handle <> "&offer=" <> show offer <> "&smart=1&identified=1&msisdnSubmitted=Y&incentivizedCheckbox=Y&legalCheckbox=Y&op_confirmCheckbox=N&msisdn%5B0%5D=" <> (sanitize country msisdn)
+  where
+  sanitize "iq" ('9':'6':'4':xs) = xs
+  sanitize _ x                   = x
 
 validateSubmission
   :: (BS.ByteString -> T.Text -> Maybe (SubmissionError C.HttpException BS.ByteString))

@@ -38,7 +38,6 @@ import qualified Data.ByteString             as BS
 import qualified Data.Text.Encoding          as E
 import qualified Data.Time.Clock.POSIX       as POSIX
 import qualified Database.Redis              as R
-import           GHC.Generics                (Generic)
 import qualified Network.URI                 as U
 import qualified Sam.Robot                   as S
 
@@ -128,6 +127,8 @@ addValidationRes res f =
     (const Nothing ||| Just . pack . ($ "") . U.uriToString id $ res)
     (Just . S.toSubmissionErrorType ||| const Nothing $ res)
   where
-    submissionErrorToText (S.NetworkError e)       = pack $ show e
-    submissionErrorToText (S.ValidationError bs)   = E.decodeUtf8 bs
-    submissionErrorToText (S.AlreadySubscribed bs) = E.decodeUtf8 bs
+    submissionErrorToText (S.NetworkError e)               = pack $ show e
+    submissionErrorToText (S.ValidationError bs)           = E.decodeUtf8 bs
+    submissionErrorToText (S.AlreadySubscribed bs)         = E.decodeUtf8 bs
+    submissionErrorToText (S.ExceededMSISDNSubmissions bs) = E.decodeUtf8 bs
+    -- submissionErrorToText x                                = pack $ show x

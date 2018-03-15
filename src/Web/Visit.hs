@@ -50,6 +50,7 @@ toSubmissionResult submissionId res = SubmissionResult {
     submissionErrorToText (S.NetworkError e)      = pack $ show e
     submissionErrorToText (S.ValidationError _)   = "Validation Failed"
     submissionErrorToText (S.AlreadySubscribed _) = "MSISDN is already subscribed"
+    submissionErrorToText (S.ExceededMSISDNSubmissions _) = "Exceeded MSISDN Submissions"
 
 data SubmissionResult = SubmissionResult {
       isValid      :: Bool
