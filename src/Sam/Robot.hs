@@ -14,20 +14,18 @@ import           Control.Exception          (try)
 import           Control.Monad              (join)
 import           Control.Monad.Except       (liftIO)
 import qualified Control.Monad.Trans.Except as X
+import qualified Data.Aeson                 as A
 import qualified Data.ByteString            as BS
 import           Data.Monoid                ((<>))
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as E
 import qualified Data.Text.IO               as T
+import           Database.Persist.TH
 import           GHC.Generics               (Generic)
 import qualified Network.HTTP.Client        as C
+import qualified Network.HTTP.Types.Header  as Header
 import qualified Network.HTTP.Types.URI     as U
 import qualified Network.URI                as U
----
-import qualified Data.Aeson                 as A
-import qualified Data.CaseInsensitive       as CI
-import           Database.Persist.TH
-import qualified Network.HTTP.Types.Header  as Header
 
 
 type Submission e b = X.ExceptT (SubmissionError e b) IO
@@ -53,7 +51,7 @@ callSAM :: String -> Submission C.HttpException b (U.URI, BS.ByteString)
 callSAM url = do
   liftIO $ putStrLn url
   x <- liftIO $ try $ join $ C.withResponseHistory
-      <$> fmap (\ req -> req {C.requestHeaders = [(Header.hUserAgent, "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36")] ++ C.requestHeaders req }) (C.parseRequest url)
+      <$> fmap (\ req -> req {C.requestHeaders = (Header.hUserAgent, "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36") : C.requestHeaders req }) (C.parseRequest url)
       <*> C.newManager C.defaultManagerSettings
       <*> return (\hr ->
         (BS.concat <$> C.brConsume (C.responseBody $ C.hrFinalResponse hr) ) >>= \b -> return (C.getUri $ C.hrFinalRequest hr, b)
@@ -65,7 +63,16 @@ callSAM url = do
 -- http://n.mobfun.co/iq/mobile-arts?country=iq&handle=mobile-arts&offer=841&msisdnSubmitted=Y&msisdn%5B0%5D=7814237252&legalCheckbox=Y&incentivizedCheckbox=Y&op_confirmCheckbox=N&identified=1
 submitMSISDN' :: String -> String -> String -> Int -> String -> Submission C.HttpException b (U.URI, BS.ByteString)
 submitMSISDN' domain handle country offer msisdn =
-  callSAM $ "http://" <> domain <> "/" <> country <> "/" <> handle <> "?country=" <> country <> "&handle=" <> handle <> "&offer=" <> show offer <> "&smart=1&identified=1&msisdnSubmitted=Y&incentivizedCheckbox=Y&legalCheckbox=Y&op_confirmCheckbox=N&msisdn%5B0%5D=" <> (sanitize country msisdn)
+  callSAM $ "http://" <> domain <> "/" <> country <> "/" <> handle <>
+    "?country="
+    <> country
+    <> "&handle="
+    <> handle
+    <> "&offer="
+    <> show offer
+    <>
+    "&smart=1&identified=1&msisdnSubmitted=Y&incentivizedCheckbox=Y&legalCheckbox=Y&op_confirmCheckbox=N&msisdn%5B0%5D="
+    <> sanitize country msisdn
   where
   sanitize "iq" ('9':'6':'4':xs) = xs
   sanitize _ x                   = x
