@@ -18,7 +18,6 @@ import           Data.Pool                   ()
 import qualified Data.Pool                   as P
 
 import           Data.Text
-import qualified Data.Text.Encoding          as E
 import qualified Data.Text.Lazy              as TL
 import qualified Database.Persist.Postgresql as DB
 import qualified Database.PostgreSQL.Simple  as PS

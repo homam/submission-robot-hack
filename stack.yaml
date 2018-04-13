@@ -41,6 +41,10 @@ packages:
     git: https://github.com/homam/persistent-postgresql-json
     commit: c714c6140aafd97ae9e1bdfe024792be164a3089
   extra-dep: true
+- location:
+    git: https://github.com/homam/haquery.git
+    commit: a171a16c80fe8fd8043bab6523637597c4632ee0
+  extra-dep: true
 
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
@@ -48,6 +52,8 @@ extra-deps:
 - persistent-2.7.0
 # - persistent-postgresql-json-0.1.1.0
 - AES-0.2.9
+- spoon-0.3.1
+# - haquery-0.1.1.3
 
 # Override default flag values for local packages and extra-deps
 flags: {}
@@ -72,3 +78,6 @@ extra-package-dbs: []
 #
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
+allow-newer: true
+ghc-options:
+  "$locals": -Wall

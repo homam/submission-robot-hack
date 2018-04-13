@@ -1,12 +1,13 @@
 {-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
 module Sam.Robot
 (
-    submitMSISDN, submitPIN, runSubmission, C.HttpException (..), SubmissionError (..)
-  , SubmissionErrorType, toSubmissionErrorType
+    submitMSISDN, submitPIN, runSubmission, C.HttpException (..), SubmissionError (..), APIErrorType (..)
+  , SubmissionErrorType (..), toSubmissionErrorType
   , main -- for demonstration purpose only
 ) where
 
@@ -17,11 +18,13 @@ import qualified Control.Monad.Trans.Except as X
 import qualified Data.Aeson                 as A
 import qualified Data.ByteString            as BS
 import           Data.Monoid                ((<>))
+import           Data.String
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as E
 import qualified Data.Text.IO               as T
 import           Database.Persist.TH
 import           GHC.Generics               (Generic)
+import qualified Haquery                    as HQ
 import qualified Network.HTTP.Client        as C
 import qualified Network.HTTP.Types.Header  as Header
 import qualified Network.HTTP.Types.URI     as U
@@ -29,18 +32,21 @@ import qualified Network.URI                as U
 
 
 type Submission e b = X.ExceptT (SubmissionError e b) IO
-data SubmissionError e b = NetworkError e | ValidationError b | AlreadySubscribed b | ExceededMSISDNSubmissions b deriving Show
+data SubmissionError e b = NetworkError e | APIError APIErrorType b
 
-data SubmissionErrorType = SENetworkError | SEInvalidMSISDN | SEAlreadySubscribed | SEExceededMSISDNSubmissions deriving (Show, Read, Enum, Eq, Ord, Bounded, Generic, A.ToJSON, A.FromJSON)
 
-toSubmissionErrorType :: SubmissionError e b -> SubmissionErrorType
-toSubmissionErrorType (NetworkError      _)         = SENetworkError
-toSubmissionErrorType (ValidationError _)           = SEInvalidMSISDN
-toSubmissionErrorType (AlreadySubscribed _)         = SEAlreadySubscribed
-toSubmissionErrorType (ExceededMSISDNSubmissions _) = SEExceededMSISDNSubmissions
+data APIErrorType = InvalidMSISDN | InvalidPIN | AlreadySubscribed | ExceededMSISDNSubmissions | UnknownError deriving Show
 
+data SubmissionErrorType = SENetworkError | SEInvalidMSISDN | SEInvalidPIN | SEAlreadySubscribed | SEExceededMSISDNSubmissions | SEUnknownError deriving (Show, Read, Enum, Eq, Ord, Bounded, Generic, A.ToJSON, A.FromJSON)
 derivePersistField "SubmissionErrorType"
 
+toSubmissionErrorType :: SubmissionError e b -> SubmissionErrorType
+toSubmissionErrorType (NetworkError _              ) = SENetworkError
+toSubmissionErrorType (APIError InvalidMSISDN     _) = SEInvalidMSISDN
+toSubmissionErrorType (APIError InvalidPIN        _) = SEInvalidPIN
+toSubmissionErrorType (APIError AlreadySubscribed _) = SEAlreadySubscribed
+toSubmissionErrorType (APIError ExceededMSISDNSubmissions _) = SEExceededMSISDNSubmissions
+toSubmissionErrorType (APIError UnknownError _) = SEUnknownError
 
 
 
@@ -75,44 +81,63 @@ submitMSISDN' domain handle country offer msisdn =
     <> sanitize country msisdn
   where
   sanitize "iq" ('9':'6':'4':xs) = xs
+  sanitize "gr" ('3':'0':xs)     = xs
+  sanitize "mx" ('5':'2':xs)     = xs
   sanitize _ x                   = x
 
-validateSubmission
-  :: (BS.ByteString -> T.Text -> Maybe (SubmissionError C.HttpException BS.ByteString))
-  -> Bool
-  -> T.Text
-  -> (b, BS.ByteString)
-  -> Submission C.HttpException BS.ByteString b
-validateSubmission customCheck includes search (url, bs) = case customCheck bs content of
-  Just m -> X.throwE m
-  Nothing -> if (`op` T.empty) $ snd $ T.breakOn search content
-    then X.throwE (ValidationError bs)
-    else return url
+validateMSISDNSubmission :: (U.URI, BS.ByteString) -> Submission C.HttpException BS.ByteString U.URI
+validateMSISDNSubmission (url, bs)
+  | hasPin content = return url
+  | otherwise =
+    if Just "mx.combate-extremo.com" == fmap U.uriRegName (U.uriAuthority url)
+      then X.throwE $ APIError AlreadySubscribed bs
+      else
+        maybe (X.throwE $ APIError UnknownError bs) X.throwE $ either
+          (const $ (`APIError` bs) <$> lookup' (`T.isInfixOf` content) includeErrors)
+          (\ t -> (`APIError` E.encodeUtf8 t) <$> lookup' (`T.isInfixOf` t) includeErrors)
+          errMsg
+
   where
-    op = if includes then (==) else (/=)
     content = E.decodeUtf8 bs
+    html = HQ.parseHtml content
+    errMsg = innerText ".errMsg" html
 
+    includeErrors :: IsString t => [(t, APIErrorType)]
+    includeErrors = [
+          ("لقد تجاوزت الحد", ExceededMSISDNSubmissions)
+        , ("الرقم الذي ادخلته غير صحيح", InvalidMSISDN)
+        , ("Θα λάβεις τώρα τον προσωπικό", AlreadySubscribed)
+        , ("Ο αριθμός του κινητού σας δεν είναι σωστός", InvalidMSISDN)
+        , ("Τώρα έλαβες ένα SMS", AlreadySubscribed)
+        , ("El numero que has introducido no es correcto", InvalidMSISDN)
+        , ("Τώρα έλαβες ένα SMS με", AlreadySubscribed)
+      ]
 
-isAlreadySubscribed :: T.Text -> Bool
-isAlreadySubscribed = T.isInfixOf "Θα λάβεις τώρα τον προσωπικό"
+    safeHead []    = Nothing
+    safeHead (x:_) = Just x
 
-isExceededMSISDNSubmissions :: T.Text -> Bool
-isExceededMSISDNSubmissions = T.isInfixOf "لقد تجاوزت الحد"
+    lookup' :: (a -> Bool) -> [(a, b)] -> Maybe b
+    lookup' p = fmap snd . safeHead . filter (p . fst)
 
-validateMSISDNSubmission :: (b, BS.ByteString) -> Submission C.HttpException BS.ByteString b
-validateMSISDNSubmission = validateSubmission
-  ( \bs content -> if isAlreadySubscribed content
-    then Just (AlreadySubscribed bs)
-    else if isExceededMSISDNSubmissions content
-      then Just (ExceededMSISDNSubmissions bs)
-      else Nothing
-  )
-  True
-  "numeric-field pin pin-input"
+hasPin :: T.Text -> Bool
+hasPin = (/= T.empty) . snd . T.breakOn "numeric-field pin pin-input"
+
+innerText :: T.Text -> Either String [HQ.Tag] -> Either String T.Text
+innerText selector html =
+  fmap (T.concat . join)
+    .   sequence
+    <$> map (fmap (map HQ.innerText) . HQ.select selector)
+    =<< html
 
 
 validatePINSubmission :: (b, BS.ByteString) -> Submission C.HttpException BS.ByteString b
-validatePINSubmission = validateSubmission (\_ _ -> Nothing) False "numeric-field pin pin-input"
+validatePINSubmission (url, bs)
+  | hasPin content = X.throwE $ APIError InvalidPIN (either (const bs) E.encodeUtf8 errMsg)
+  | otherwise = return url
+  where
+    content = E.decodeUtf8 bs
+    html = HQ.parseHtml content
+    errMsg = innerText ".errMsg" html
 
 submitPIN' :: BS.ByteString -> U.URI -> Submission C.HttpException b (U.URI, BS.ByteString)
 submitPIN' pin url = callSAM $ (U.uriToString id $ makePINUrl pin url) ""
@@ -162,8 +187,6 @@ main = do
     liftIO $ print finalUrl
     return finalUrl
   case finalResult of
-    Left (NetworkError e) -> putStrLn "NetworkError" >> print e
-    Left (ValidationError bs) -> putStrLn "Validation Error" >> T.writeFile "/Users/homam/temp/submissoinf.html" (E.decodeUtf8 bs)
-    Left (AlreadySubscribed bs) -> putStrLn "AlreadySubscribed Error" >> T.writeFile "/Users/homam/temp/submissoinf.html" (E.decodeUtf8 bs)
-    Left (ExceededMSISDNSubmissions bs) -> putStrLn "ExceededMSISDNSubmissions Error" >> T.writeFile "/Users/homam/temp/submissoinf.html" (E.decodeUtf8 bs)
+    Left (NetworkError bs) -> putStrLn "NetworkError" >> print bs
+    Left (APIError e bs) -> print e >> T.writeFile "/Users/homam/temp/submissoinf.html" (E.decodeUtf8 bs)
     Right url -> putStrLn "Success" >> print url

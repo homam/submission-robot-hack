@@ -93,7 +93,9 @@ runRedisCommand command = do
   run <- lift $ asks runRedis
   liftIO (run command)
 
-runApp :: (BaseBackend backend ~ SqlBackend, IsPersistBackend backend, MonadBaseControl IO m, MonadIO m) => ConnectionString -> (Pool backend -> IO a) -> m a
+runApp ::
+     (BaseBackend backend ~ SqlBackend, IsPersistBackend backend, MonadBaseControl IO m, MonadIO m)
+  => ConnectionString -> (Pool backend -> IO a) -> m a
 runApp connStr appf =
   runNoLoggingT $
     withPostgresqlPool connStr 10 $
@@ -102,33 +104,40 @@ runApp connStr appf =
 doMigrations :: (MonadTrans t, MonadReader AppState m, MonadIO (t m)) => t m ()
 doMigrations = runDb (runMigration migrateAll)
 
-addMSISDNSubmission :: (MonadTrans t, MonadReader AppState m, MonadIO (t m)) => Text -> Text -> Text -> Int -> Text -> Either (S.SubmissionError S.HttpException BS.ByteString) U.URI -> t m (Key MSISDNSubmission)
+addMSISDNSubmission ::
+     (MonadTrans t, MonadReader AppState m, MonadIO (t m))
+  => Text -> Text -> Text -> Int -> Text -> Either (S.SubmissionError S.HttpException BS.ByteString) U.URI -> t m (Key MSISDNSubmission)
 addMSISDNSubmission domain country handle offer msisdn res = do
   submissionId <- newSubmissionId
   let obj = addValidationRes res $ MSISDNSubmission (Just submissionId) country handle domain offer msisdn
   runDb (insert obj)
-  -- sid <- runDb (insert obj)
-  -- runRedisCommand (R.setOpts (E.encodeUtf8 $ pack $ show $ fromIntegral $ fromSqlKey sid) (E.encodeUtf8 $ toJsonText (sid, obj) ) (R.SetOpts (Just 60) Nothing Nothing))
-  -- return sid
 
-addPINSubmission :: (MonadTrans t, MonadReader AppState m, MonadIO (t m)) => Int -> Text -> Either (S.SubmissionError S.HttpException BS.ByteString) U.URI -> t m (Key PINSubmission)
+addPINSubmission ::
+     (MonadTrans t, MonadReader AppState m, MonadIO (t m))
+  => Int -> Text -> Either (S.SubmissionError S.HttpException BS.ByteString) U.URI -> t m (Key PINSubmission)
 addPINSubmission msisdnSubmissionKey pin res = do
   submissionId <- newSubmissionId
   runDb (insert $ addValidationRes res (\ i t f _ -> PINSubmission (Just submissionId) (toSqlKey $ fromIntegral msisdnSubmissionKey) pin i t f))
 
-getMSISDNSubmission :: (MonadIO (t m), MonadReader AppState m, MonadTrans t, ToBackendKey SqlBackend MSISDNSubmission, Integral a) => a -> t m (Maybe MSISDNSubmission)
+getMSISDNSubmission ::
+    (MonadIO (t m), MonadReader AppState m, MonadTrans t, ToBackendKey SqlBackend MSISDNSubmission, Integral a)
+  => a -> t m (Maybe MSISDNSubmission)
 getMSISDNSubmission sid = runDb (get $ toSqlKey . fromIntegral  $ sid)
 
-addValidationRes :: Either (S.SubmissionError S.HttpException BS.ByteString) U.URI -> (Bool -> Maybe Text -> Maybe Text -> Maybe S.SubmissionErrorType -> a) -> a
-addValidationRes res f =
-  f
-    (const False ||| const True $ res)
-    (Just . submissionErrorToText ||| const Nothing $ res)
-    (const Nothing ||| Just . pack . ($ "") . U.uriToString id $ res)
-    (Just . S.toSubmissionErrorType ||| const Nothing $ res)
-  where
-    submissionErrorToText (S.NetworkError e)               = pack $ show e
-    submissionErrorToText (S.ValidationError bs)           = E.decodeUtf8 bs
-    submissionErrorToText (S.AlreadySubscribed bs)         = E.decodeUtf8 bs
-    submissionErrorToText (S.ExceededMSISDNSubmissions bs) = E.decodeUtf8 bs
-    -- submissionErrorToText x                                = pack $ show x
+addValidationRes ::
+      Either (S.SubmissionError S.HttpException BS.ByteString) U.URI
+  -> (Bool -> Maybe Text -> Maybe Text -> Maybe S.SubmissionErrorType -> a)
+  -> a
+addValidationRes res f = f
+  (const False ||| const True $ res)
+  (Just . submissionErrorToText ||| const Nothing $ res)
+  (const Nothing ||| Just . pack . ($ "") . U.uriToString id $ res)
+  (Just . S.toSubmissionErrorType ||| const Nothing $ res)
+ where
+  submissionErrorToText (S.NetworkError e                 ) = pack $ show e
+  submissionErrorToText (S.APIError S.InvalidMSISDN     bs) = E.decodeUtf8 bs
+  submissionErrorToText (S.APIError S.AlreadySubscribed bs) = E.decodeUtf8 bs
+  submissionErrorToText (S.APIError S.ExceededMSISDNSubmissions bs) = E.decodeUtf8 bs
+  submissionErrorToText (S.APIError S.InvalidPIN bs) = E.decodeUtf8 bs
+  submissionErrorToText (S.APIError S.UnknownError bs) = E.decodeUtf8 bs
+

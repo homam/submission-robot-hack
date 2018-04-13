@@ -41,16 +41,18 @@ doMigrationsWeb =
 
 
 toSubmissionResult :: Text -> Either (S.SubmissionError S.HttpException BS.ByteString) U.URI -> SubmissionResult
-toSubmissionResult submissionId res = SubmissionResult {
-    submissionId = submissionId
+toSubmissionResult submissionId' res = SubmissionResult {
+    submissionId = submissionId'
   , isValid = const False ||| const True $ res
-  , errorText = Just . submissionErrorToText ||| const Nothing $ res
+  , errorText = Just . submissionErrorToText . S.toSubmissionErrorType ||| const Nothing $ res
   , errorType = (Just . S.toSubmissionErrorType ||| const Nothing $ res)
   } where
-    submissionErrorToText (S.NetworkError e)      = pack $ show e
-    submissionErrorToText (S.ValidationError _)   = "Validation Failed"
-    submissionErrorToText (S.AlreadySubscribed _) = "MSISDN is already subscribed"
-    submissionErrorToText (S.ExceededMSISDNSubmissions _) = "Exceeded MSISDN Submissions"
+    submissionErrorToText S.SENetworkError      = "Network Error"
+    submissionErrorToText S.SEInvalidMSISDN   = "MSISDN Validation Failed"
+    submissionErrorToText S.SEInvalidPIN = "PIN Validation Failed"
+    submissionErrorToText S.SEAlreadySubscribed = "MSISDN is already subscribed"
+    submissionErrorToText S.SEExceededMSISDNSubmissions = "Exceeded MSISDN Submissions"
+    submissionErrorToText S.SEUnknownError = "Unknown Error"
 
 data SubmissionResult = SubmissionResult {
       isValid      :: Bool
@@ -77,7 +79,7 @@ msisdnSubmissionWeb =
 msisdnSubmissionAction :: Text -> Text -> Text -> Int -> Text -> WebMAction ()
 msisdnSubmissionAction domain country handle offer msisdn = do
   res <- liftIO $ S.runSubmission $ S.submitMSISDN (unpack domain) (unpack handle) (unpack country) offer (unpack msisdn)
-  sid <- fromIntegral . fromSqlKey <$> addMSISDNSubmission domain country handle offer msisdn res
+  (sid :: Integer) <- fromIntegral . fromSqlKey <$> addMSISDNSubmission domain country handle offer msisdn res
   let psid = pack . encrypt' . show $ sid
   addScotchHeader "SubmissionId" (TL.fromStrict psid)
   json $ toSubmissionResult psid res
@@ -98,8 +100,8 @@ pinSubmissionAction sid pin = do
     Just (url, submission) -> do
       let country = mSISDNSubmissionCountry submission
       res <- liftIO $ S.runSubmission $ S.submitPIN (E.encodeUtf8 pin) url
-      sid <- fromIntegral . fromSqlKey <$> addPINSubmission sid pin res
-      let epsid =  encrypt' . show $ sid
+      (sid' :: Integer) <- fromIntegral . fromSqlKey <$> addPINSubmission sid pin res
+      let epsid =  encrypt' . show $ sid'
       addScotchHeader "SubmissionId" (TL.pack epsid)
       json FinalResult { finalUrl = finalUrl' country , finalSubmissionResult = toSubmissionResult (pack epsid) res }
     Nothing ->
