@@ -2,6 +2,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 module Web.WebM (
@@ -17,6 +18,7 @@ import           Data.Pool                   ()
 
 import qualified Data.Pool                   as P
 
+import           Control.Exception           as Ex
 import           Data.Text
 import qualified Data.Text.Lazy              as TL
 import qualified Database.Persist.Postgresql as DB
@@ -76,8 +78,15 @@ addServerHeader =
 
 runWebServer :: Int -> R.ConnectInfo -> DB.ConnectionString -> DB.ConnectionString -> WebMApp b -> IO ()
 runWebServer port redisConnInfo jewlConnStr connStr a = do
-  redisConn <- R.checkedConnect redisConnInfo
-  jewlPool <- P.createPool (PS.connectPostgreSQL jewlConnStr) PS.close 1 10 10
+  redisConnE <- mapLeft "Cannot connect to Redis" <$> Ex.try (R.checkedConnect redisConnInfo)
+  jewlPoolE <- mapLeft "Cannot connect to PostgreSQL jewl" <$> Ex.try (P.createPool (PS.connectPostgreSQL jewlConnStr) PS.close 1 10 10)
 
-  runApp connStr (\pool -> scottyT port (runWeb redisConn jewlPool pool) (middleware logAllMiddleware >> middleware addServerHeader >> a))
+  case (,) <$> redisConnE <*> jewlPoolE of
+    Left e -> putStrLn e
+    Right (redisConn, jewlPool) ->
+      runApp connStr (\pool -> scottyT port (runWeb redisConn jewlPool pool) (middleware logAllMiddleware >> middleware addServerHeader >> a))
 
+  where
+    mapLeft :: String -> Either SomeException a -> Either String a
+    mapLeft s (Left l)  = Left $ s ++ ":\n" ++ show l
+    mapLeft _ (Right r) = Right r
