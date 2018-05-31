@@ -139,5 +139,7 @@ addValidationRes res f = f
   submissionErrorToText (S.APIError S.AlreadySubscribed bs) = E.decodeUtf8 bs
   submissionErrorToText (S.APIError S.ExceededMSISDNSubmissions bs) = E.decodeUtf8 bs
   submissionErrorToText (S.APIError S.InvalidPIN bs) = E.decodeUtf8 bs
+  submissionErrorToText (S.APIError S.KeywordAndShortcodeNotFound bs) = E.decodeUtf8 bs
   submissionErrorToText (S.APIError S.UnknownError bs) = E.decodeUtf8 bs
+
 

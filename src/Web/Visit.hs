@@ -6,6 +6,7 @@
 module Web.Visit(
     doMigrationsWeb
   , msisdnSubmissionWeb
+  , msisdnSubmissionWebForMOFlow
   , pinSubmissionWeb
   , msisdnExistsWeb
   , SubmissionResult (..)
@@ -20,7 +21,7 @@ import qualified Data.Aeson                as A
 import qualified Data.Aeson.Types          as AT
 import qualified Data.ByteString           as BS
 import qualified Data.HashMap.Strict       as M
-import           Data.Maybe                (maybe)
+import           Data.Maybe                (maybe, fromMaybe)
 import           Data.Monoid               ((<>))
 import           Data.Text                 (Text, pack, toLower, unpack)
 import qualified Data.Text.Encoding        as E
@@ -33,6 +34,7 @@ import qualified Web.JewlModel             as JM
 import           Web.Localization          (decrypt', encrypt', toLocalMSISDN)
 import           Web.Model
 import           Web.WebM
+import qualified Data.Text.Encoding               as Encoding
 
 doMigrationsWeb :: WebMApp ()
 doMigrationsWeb =
@@ -40,23 +42,44 @@ doMigrationsWeb =
     doMigrations >> text "done!"
 
 
-toSubmissionResult :: Text -> Either (S.SubmissionError S.HttpException BS.ByteString) U.URI -> SubmissionResult
+toSubmissionResult :: Text -> Either (S.SubmissionError S.HttpException BS.ByteString) a -> SubmissionResult
 toSubmissionResult submissionId' res = SubmissionResult {
     submissionId = submissionId'
   , isValid = const False ||| const True $ res
+  , keyword =  Nothing
   , errorText = Just . submissionErrorToText . S.toSubmissionErrorType ||| const Nothing $ res
   , errorType = (Just . S.toSubmissionErrorType ||| const Nothing $ res)
-  } where
+  }
+  where
     submissionErrorToText S.SENetworkError      = "Network Error"
     submissionErrorToText S.SEInvalidMSISDN   = "MSISDN Validation Failed"
     submissionErrorToText S.SEInvalidPIN = "PIN Validation Failed"
     submissionErrorToText S.SEAlreadySubscribed = "MSISDN is already subscribed"
     submissionErrorToText S.SEExceededMSISDNSubmissions = "Exceeded MSISDN Submissions"
     submissionErrorToText S.SEUnknownError = "Unknown Error"
+    submissionErrorToText S.SEKeywordAndShortcodeNotFound = "Keyword and Shortcode not found"
+
+toSubmissionResultForMOFlow :: Text -> Either (S.SubmissionError S.HttpException BS.ByteString) S.MOFlowSubmissionResult -> SubmissionResult
+toSubmissionResultForMOFlow submissionId' res = SubmissionResult {
+    submissionId = submissionId'
+  , isValid = const False ||| const True $ res
+  , keyword =  const Nothing ||| Just $ res
+  , errorText = Just . submissionErrorToText . S.toSubmissionErrorType ||| const Nothing $ res
+  , errorType = (Just . S.toSubmissionErrorType ||| const Nothing $ res)
+  }
+  where
+    submissionErrorToText S.SENetworkError      = "Network Error"
+    submissionErrorToText S.SEInvalidMSISDN   = "MSISDN Validation Failed"
+    submissionErrorToText S.SEInvalidPIN = "PIN Validation Failed"
+    submissionErrorToText S.SEAlreadySubscribed = "MSISDN is already subscribed"
+    submissionErrorToText S.SEExceededMSISDNSubmissions = "Exceeded MSISDN Submissions"
+    submissionErrorToText S.SEUnknownError = "Unknown Error"
+    submissionErrorToText S.SEKeywordAndShortcodeNotFound = "Keyword and Shortcode not found"
 
 data SubmissionResult = SubmissionResult {
       isValid      :: Bool
     , errorText    :: Maybe Text
+    , keyword      :: Maybe S.MOFlowSubmissionResult
     , submissionId :: Text
     , errorType    :: Maybe S.SubmissionErrorType
   } deriving (Eq, Ord, Show, Read, Generic)
@@ -73,17 +96,45 @@ instance A.ToJSON FinalResult where
 msisdnSubmissionWeb :: WebMApp ()
 msisdnSubmissionWeb =
   getAndHead "/submit_msisdn/:domain/:country/:handle/:offer" $
-    join $ msisdnSubmissionAction <$> param "domain" <*> param "country" <*> param "handle" <*> param "offer"
+    join $ msisdnSubmissionAction False <$> param "domain" <*> param "country" <*> param "handle" <*> param "offer"
     <*> (pack <$> (toLocalMSISDN <$> (unpack <$> param "country") <*> (unpack <$> param "msisdn")))
 
-msisdnSubmissionAction :: Text -> Text -> Text -> Int -> Text -> WebMAction ()
-msisdnSubmissionAction domain country handle offer msisdn = do
-  res <- liftIO $ S.runSubmission $ S.submitMSISDN (unpack domain) (unpack handle) (unpack country) offer (unpack msisdn)
-  (sid :: Integer) <- fromIntegral . fromSqlKey <$> addMSISDNSubmission domain country handle offer msisdn res
-  let psid = pack . encrypt' . show $ sid
-  addScotchHeader "SubmissionId" (TL.fromStrict psid)
-  json $ toSubmissionResult psid res
+msisdnSubmissionWebForMOFlow :: WebMApp ()
+msisdnSubmissionWebForMOFlow =
+  getAndHead "/submit_msisdn_mo/:domain/:country/:handle/:offer" $
+    join $ msisdnSubmissionAction True <$> param "domain" <*> param "country" <*> param "handle" <*> param "offer"
+    <*> (pack <$> (toLocalMSISDN <$> (unpack <$> param "country") <*> (unpack <$> param "msisdn")))
 
+--TODO: break it down into two functions
+msisdnSubmissionAction :: Bool -> Text -> Text -> Text -> Int -> Text -> WebMAction ()
+msisdnSubmissionAction isMOFlow domain country handle offer msisdn = do
+  if not isMOFlow 
+    then do
+      res <- liftIO $ S.runSubmission $ S.submitMSISDN (unpack domain) (unpack handle) (unpack country) offer (unpack msisdn)
+      (sid :: Integer) <- fromIntegral . fromSqlKey <$> addMSISDNSubmission domain country handle offer msisdn res
+      let psid = pack . encrypt' . show $ sid
+      addScotchHeader "SubmissionId" (TL.fromStrict psid)
+      json $ toSubmissionResult psid res
+    else do
+      res <- liftIO $ S.runSubmission $ S.submitMSISDNForMOFlow (unpack domain) (unpack handle) (unpack country) offer (unpack msisdn)
+      (sid :: Integer) <- fromIntegral . fromSqlKey <$> addMSISDNSubmission domain country handle offer msisdn (castToUri <$> res)
+      
+      let psid = pack . encrypt' . show $ sid
+      case res of
+        Left (S.NetworkError _ ) -> do 
+            liftIO $ print "error"
+            json $ toSubmissionResultForMOFlow psid res
+        Left (S.APIError _ b ) -> do 
+            liftIO $ writeFile "/Users/homam/temp/submissoinf.html"  ( unpack $ Encoding.decodeUtf8 b )
+            json $ toSubmissionResultForMOFlow psid res
+        Right _ -> do
+          addScotchHeader "SubmissionId" (TL.fromStrict psid)
+          json $ toSubmissionResultForMOFlow psid res
+
+  where
+    castToUri :: S.MOFlowSubmissionResult -> U.URI
+    castToUri (S.MOFlowSubmissionResult keyword shortcode) = fromMaybe U.nullURI $ U.parseURI $ "sms:" ++ (unpack keyword) ++ "&body=" ++ (unpack shortcode)
+    
 pinSubmissionWeb :: WebMApp ()
 pinSubmissionWeb =
   getAndHead "/submit_pin/" $ do

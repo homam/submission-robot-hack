@@ -61,7 +61,7 @@ testGet200 url = test200 url get
 -- WebMApp
 
 myApp :: W.WebMApp ()
-myApp = doMigrationsWeb >> msisdnExistsWeb >> msisdnSubmissionWeb >> pinSubmissionWeb
+myApp = doMigrationsWeb >> msisdnExistsWeb >> msisdnSubmissionWeb >> msisdnSubmissionWebForMOFlow >> pinSubmissionWeb
 
 withAppT = with . Trans.scottyAppT (\a -> do
   db <- liftIO $ Env.getEnv "db"

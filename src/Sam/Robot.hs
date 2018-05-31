@@ -6,7 +6,7 @@
 
 module Sam.Robot
 (
-    submitMSISDN, submitPIN, runSubmission, C.HttpException (..), SubmissionError (..), APIErrorType (..)
+    submitMSISDN, submitMSISDNForMOFlow, submitPIN, runSubmission, C.HttpException (..), SubmissionError (..), APIErrorType (..), MOFlowSubmissionResult (..)
   , SubmissionErrorType (..), toSubmissionErrorType
   , main -- for demonstration purpose only
 ) where
@@ -34,10 +34,11 @@ import qualified Network.URI                as U
 type Submission e b = X.ExceptT (SubmissionError e b) IO
 data SubmissionError e b = NetworkError e | APIError APIErrorType b
 
+data MOFlowSubmissionResult = MOFlowSubmissionResult {  keyword :: T.Text, shortcode :: T.Text } deriving (Show, Read, Eq, Ord, Generic, A.ToJSON, A.FromJSON)
 
-data APIErrorType = InvalidMSISDN | InvalidPIN | AlreadySubscribed | ExceededMSISDNSubmissions | UnknownError deriving Show
+data APIErrorType = InvalidMSISDN | InvalidPIN | AlreadySubscribed | ExceededMSISDNSubmissions | UnknownError | KeywordAndShortcodeNotFound deriving Show
 
-data SubmissionErrorType = SENetworkError | SEInvalidMSISDN | SEInvalidPIN | SEAlreadySubscribed | SEExceededMSISDNSubmissions | SEUnknownError deriving (Show, Read, Enum, Eq, Ord, Bounded, Generic, A.ToJSON, A.FromJSON)
+data SubmissionErrorType = SENetworkError | SEInvalidMSISDN | SEInvalidPIN | SEAlreadySubscribed | SEExceededMSISDNSubmissions | SEUnknownError | SEKeywordAndShortcodeNotFound deriving (Show, Read, Enum, Eq, Ord, Bounded, Generic, A.ToJSON, A.FromJSON)
 derivePersistField "SubmissionErrorType"
 
 toSubmissionErrorType :: SubmissionError e b -> SubmissionErrorType
@@ -46,6 +47,7 @@ toSubmissionErrorType (APIError InvalidMSISDN     _) = SEInvalidMSISDN
 toSubmissionErrorType (APIError InvalidPIN        _) = SEInvalidPIN
 toSubmissionErrorType (APIError AlreadySubscribed _) = SEAlreadySubscribed
 toSubmissionErrorType (APIError ExceededMSISDNSubmissions _) = SEExceededMSISDNSubmissions
+toSubmissionErrorType (APIError KeywordAndShortcodeNotFound _) = SEKeywordAndShortcodeNotFound
 toSubmissionErrorType (APIError UnknownError _) = SEUnknownError
 
 
@@ -83,6 +85,8 @@ submitMSISDN' domain handle country offer msisdn =
   sanitize "iq" ('9':'6':'4':xs) = xs
   sanitize "gr" ('3':'0':xs)     = xs
   sanitize "mx" ('5':'2':xs)     = xs
+  sanitize "sk" ('4':'2':'1':xs) = xs
+  sanitize "ee" ('3':'7':'2':xs) = xs
   sanitize _ x                   = x
 
 validateMSISDNSubmission :: (U.URI, BS.ByteString) -> Submission C.HttpException BS.ByteString U.URI
@@ -119,12 +123,66 @@ validateMSISDNSubmission (url, bs)
     lookup' :: (a -> Bool) -> [(a, b)] -> Maybe b
     lookup' p = fmap snd . safeHead . filter (p . fst)
 
+validateMSISDNSubmissionForMOFlow :: (U.URI, BS.ByteString) -> Submission C.HttpException BS.ByteString MOFlowSubmissionResult
+validateMSISDNSubmissionForMOFlow (_, bs)
+  | hasKeyword content = proceed
+  | otherwise = 
+        maybe (X.throwE $ APIError UnknownError bs) X.throwE $ -- maybe :: b -> (v -> b) -> Maybe v -> b  -- very similar to 'either' function below, 'maybe' converts Maybe v to b. Here b is actually: 'Submission C.HttpException BS.ByteString MOFlowSubmissionResult'
+          either -- either :: (e -> b) -> (v -> b) -> Etiher e v -> b  -- takes an either and produces a new value of type b. Here b type is actually 'Maybe SubmissionError'
+            (const $ (`APIError` bs) <$> lookup' (`T.isInfixOf` content) includeErrors)
+            (\ t -> (`APIError` E.encodeUtf8 t) <$> lookup' (`T.isInfixOf` t) includeErrors)
+            errMsg -- errMsg is of type Either (it can be either: Left someError | Right value )
+
+  where
+    proceed = 
+      let eks = keywordAndShortCode 
+      in case eks of
+        Left _ -> X.throwE (APIError KeywordAndShortcodeNotFound bs)
+        Right ks -> return $ uncurry MOFlowSubmissionResult $ ks
+
+    content = E.decodeUtf8 bs
+    html = HQ.parseHtml content
+
+    errMsg :: Either String T.Text
+    errMsg = innerText ".errMsg" html
+    
+    keywordAndShortCode :: Either String (T.Text, T.Text)
+    keywordAndShortCode = toKeywordaAndShortCode =<< innerTexts "main h3 em" html
+
+    toKeywordaAndShortCode :: [T.Text] -> Either String (T.Text, T.Text)
+    toKeywordaAndShortCode [] = Left "Keyword and Shortcode not found on the Page"
+    toKeywordaAndShortCode (_:[]) = Left "Keyword or Shortcode not found on the Page"
+    toKeywordaAndShortCode (a:b:_) = Right (a, b)
+
+    includeErrors :: IsString t => [(t, APIErrorType)]
+    includeErrors = [
+          ("لقد تجاوزت الحد", ExceededMSISDNSubmissions)
+        , ("الرقم الذي ادخلته غير صحيح", InvalidMSISDN)
+        , ("Θα λάβεις τώρα τον προσωπικό", AlreadySubscribed)
+        , ("Ο αριθμός του κινητού σας δεν είναι σωστός", InvalidMSISDN)
+        , ("Τώρα έλαβες ένα SMS", AlreadySubscribed)
+        , ("El numero que has introducido no es correcto", InvalidMSISDN)
+        , ("Τώρα έλαβες ένα SMS με", AlreadySubscribed)
+      ]
+
+    safeHead []    = Nothing
+    safeHead (x:_) = Just x
+
+    lookup' :: (a -> Bool) -> [(a, b)] -> Maybe b
+    lookup' p = fmap snd . safeHead . filter (p . fst)
+
+hasKeyword :: T.Text -> Bool
+hasKeyword = (/= T.empty) . snd . T.breakOn "keyword"
+
 hasPin :: T.Text -> Bool
 hasPin = (/= T.empty) . snd . T.breakOn "numeric-field pin pin-input"
 
 innerText :: T.Text -> Either String [HQ.Tag] -> Either String T.Text
-innerText selector html =
-  fmap (T.concat . join)
+innerText selector = fmap T.concat . innerTexts selector
+
+innerTexts :: T.Text -> Either String [HQ.Tag] -> Either String [T.Text]
+innerTexts selector html =
+  fmap join
     .   sequence
     <$> map (fmap (map HQ.innerText) . HQ.select selector)
     =<< html
@@ -162,7 +220,17 @@ makePINUrl pin url = U.URI (U.uriScheme url) (U.uriAuthority url) (U.uriPath url
       ]) . fst) $ U.parseQuery $ E.encodeUtf8 $ T.pack $ U.uriQuery url'
 
 submitMSISDN :: String -> String -> String -> Int -> String -> X.ExceptT (SubmissionError C.HttpException BS.ByteString) IO U.URI
-submitMSISDN d h c o = (validateMSISDNSubmission =<<) . submitMSISDN' d h c o
+submitMSISDN d h c o m = do
+  res <- submitMSISDN' d h c o m
+  validateMSISDNSubmission res
+
+
+submitMSISDNForMOFlow :: String -> String -> String -> Int -> String -> X.ExceptT (SubmissionError C.HttpException BS.ByteString) IO MOFlowSubmissionResult
+submitMSISDNForMOFlow d h c o m = do
+  res <- submitMSISDN' d h c o m
+  validateMSISDNSubmissionForMOFlow res
+
+
 
 submitPIN :: BS.ByteString -> U.URI -> X.ExceptT (SubmissionError C.HttpException BS.ByteString) IO U.URI
 submitPIN p = (validatePINSubmission =<<) . submitPIN' p
