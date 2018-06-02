@@ -77,7 +77,7 @@ newtype AppStateM a = AppStateM {
 newSubmissionId
   :: (MonadTrans t, MonadReader AppState m, MonadIO (t m)) => t m Int
 newSubmissionId =
-  liftIO (round . (*1000000) . fromRational . toRational <$> POSIX.getPOSIXTime)
+  liftIO ((round :: Double -> Int) . (*1000000) . fromRational . toRational <$> POSIX.getPOSIXTime)
 
 doMigrationsWithPool :: Pool SqlBackend -> IO ()
 doMigrationsWithPool pool = flip runSqlPersistMPool pool $

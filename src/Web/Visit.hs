@@ -21,10 +21,11 @@ import qualified Data.Aeson                as A
 import qualified Data.Aeson.Types          as AT
 import qualified Data.ByteString           as BS
 import qualified Data.HashMap.Strict       as M
-import           Data.Maybe                (maybe, fromMaybe)
+import           Data.Maybe                (fromMaybe, maybe)
 import           Data.Monoid               ((<>))
 import           Data.Text                 (Text, pack, toLower, unpack)
 import qualified Data.Text.Encoding        as E
+import qualified Data.Text.Encoding        as Encoding
 import qualified Data.Text.Lazy            as TL
 import           GHC.Generics
 import           Network.HTTP.Types.Status (status500)
@@ -34,7 +35,6 @@ import qualified Web.JewlModel             as JM
 import           Web.Localization          (decrypt', encrypt', toLocalMSISDN)
 import           Web.Model
 import           Web.WebM
-import qualified Data.Text.Encoding               as Encoding
 
 doMigrationsWeb :: WebMApp ()
 doMigrationsWeb =
@@ -107,8 +107,8 @@ msisdnSubmissionWebForMOFlow =
 
 --TODO: break it down into two functions
 msisdnSubmissionAction :: Bool -> Text -> Text -> Text -> Int -> Text -> WebMAction ()
-msisdnSubmissionAction isMOFlow domain country handle offer msisdn = do
-  if not isMOFlow 
+msisdnSubmissionAction isMOFlow domain country handle offer msisdn =
+  if not isMOFlow
     then do
       res <- liftIO $ S.runSubmission $ S.submitMSISDN (unpack domain) (unpack handle) (unpack country) offer (unpack msisdn)
       (sid :: Integer) <- fromIntegral . fromSqlKey <$> addMSISDNSubmission domain country handle offer msisdn res
@@ -118,14 +118,12 @@ msisdnSubmissionAction isMOFlow domain country handle offer msisdn = do
     else do
       res <- liftIO $ S.runSubmission $ S.submitMSISDNForMOFlow (unpack domain) (unpack handle) (unpack country) offer (unpack msisdn)
       (sid :: Integer) <- fromIntegral . fromSqlKey <$> addMSISDNSubmission domain country handle offer msisdn (castToUri <$> res)
-      
+
       let psid = pack . encrypt' . show $ sid
       case res of
-        Left (S.NetworkError _ ) -> do 
-            liftIO $ print "error"
+        Left (S.NetworkError _ ) ->
             json $ toSubmissionResultForMOFlow psid res
-        Left (S.APIError _ b ) -> do 
-            liftIO $ writeFile "/Users/homam/temp/submissoinf.html"  ( unpack $ Encoding.decodeUtf8 b )
+        Left (S.APIError _ _) ->
             json $ toSubmissionResultForMOFlow psid res
         Right _ -> do
           addScotchHeader "SubmissionId" (TL.fromStrict psid)
@@ -133,8 +131,8 @@ msisdnSubmissionAction isMOFlow domain country handle offer msisdn = do
 
   where
     castToUri :: S.MOFlowSubmissionResult -> U.URI
-    castToUri (S.MOFlowSubmissionResult keyword shortcode) = fromMaybe U.nullURI $ U.parseURI $ "sms:" ++ (unpack keyword) ++ "&body=" ++ (unpack shortcode)
-    
+    castToUri (S.MOFlowSubmissionResult keyword' shortcode) = fromMaybe U.nullURI $ U.parseURI $ "sms:" ++ (unpack keyword') ++ "&body=" ++ (unpack shortcode)
+
 pinSubmissionWeb :: WebMApp ()
 pinSubmissionWeb =
   getAndHead "/submit_pin/" $ do

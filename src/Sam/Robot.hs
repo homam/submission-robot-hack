@@ -32,7 +32,7 @@ import qualified Network.URI                as U
 
 
 type Submission e b = X.ExceptT (SubmissionError e b) IO
-data SubmissionError e b = NetworkError e | APIError APIErrorType b
+data SubmissionError e b = NetworkError e | APIError APIErrorType b deriving (Show)
 
 data MOFlowSubmissionResult = MOFlowSubmissionResult {  keyword :: T.Text, shortcode :: T.Text } deriving (Show, Read, Eq, Ord, Generic, A.ToJSON, A.FromJSON)
 
@@ -95,13 +95,13 @@ validateMSISDNSubmission (url, bs)
   | otherwise =
     if Just "mx.combate-extremo.com" == fmap U.uriRegName (U.uriAuthority url)
       then X.throwE $ APIError AlreadySubscribed bs
-      else
-        maybe (X.throwE $ APIError UnknownError bs) X.throwE $ either
-          (const $ (`APIError` bs) <$> lookup' (`T.isInfixOf` content) includeErrors)
-          (\ t -> (`APIError` E.encodeUtf8 t) <$> lookup' (`T.isInfixOf` t) includeErrors)
-          errMsg
+      else maybe (X.throwE $ APIError UnknownError bs) X.throwE err
 
   where
+    err = either
+            (const $ (`APIError` bs) <$> lookup' (`T.isInfixOf` content) includeErrors)
+            (\ t -> (`APIError` E.encodeUtf8 t) <$> lookup' (`T.isInfixOf` t) includeErrors)
+            errMsg
     content = E.decodeUtf8 bs
     html = HQ.parseHtml content
     errMsg = innerText ".errMsg" html
@@ -126,7 +126,7 @@ validateMSISDNSubmission (url, bs)
 validateMSISDNSubmissionForMOFlow :: (U.URI, BS.ByteString) -> Submission C.HttpException BS.ByteString MOFlowSubmissionResult
 validateMSISDNSubmissionForMOFlow (_, bs)
   | hasKeyword content = proceed
-  | otherwise = 
+  | otherwise =
         maybe (X.throwE $ APIError UnknownError bs) X.throwE $ -- maybe :: b -> (v -> b) -> Maybe v -> b  -- very similar to 'either' function below, 'maybe' converts Maybe v to b. Here b is actually: 'Submission C.HttpException BS.ByteString MOFlowSubmissionResult'
           either -- either :: (e -> b) -> (v -> b) -> Etiher e v -> b  -- takes an either and produces a new value of type b. Here b type is actually 'Maybe SubmissionError'
             (const $ (`APIError` bs) <$> lookup' (`T.isInfixOf` content) includeErrors)
@@ -134,10 +134,10 @@ validateMSISDNSubmissionForMOFlow (_, bs)
             errMsg -- errMsg is of type Either (it can be either: Left someError | Right value )
 
   where
-    proceed = 
-      let eks = keywordAndShortCode 
+    proceed =
+      let eks = keywordAndShortCode
       in case eks of
-        Left _ -> X.throwE (APIError KeywordAndShortcodeNotFound bs)
+        Left _   -> X.throwE (APIError KeywordAndShortcodeNotFound bs)
         Right ks -> return $ uncurry MOFlowSubmissionResult $ ks
 
     content = E.decodeUtf8 bs
@@ -145,7 +145,7 @@ validateMSISDNSubmissionForMOFlow (_, bs)
 
     errMsg :: Either String T.Text
     errMsg = innerText ".errMsg" html
-    
+
     keywordAndShortCode :: Either String (T.Text, T.Text)
     keywordAndShortCode = toKeywordaAndShortCode =<< innerTexts "main h3 em" html
 
@@ -171,17 +171,20 @@ validateMSISDNSubmissionForMOFlow (_, bs)
     lookup' :: (a -> Bool) -> [(a, b)] -> Maybe b
     lookup' p = fmap snd . safeHead . filter (p . fst)
 
+contains :: T.Text -> T.Text -> Bool
+contains s = (/= T.empty) . snd . T.breakOn s
+
 hasKeyword :: T.Text -> Bool
-hasKeyword = (/= T.empty) . snd . T.breakOn "keyword"
+hasKeyword = contains "keyword"
 
 hasPin :: T.Text -> Bool
-hasPin = (/= T.empty) . snd . T.breakOnEnd "numeric-field pin pin-input"
+hasPin = contains "numeric-field pin pin-input"
 
 isMSISDNEntryPage :: T.Text -> Bool
-isMSISDNEntryPage = (/= T.empty) . snd . T.breakOnEnd "numeric-field msisdn"
+isMSISDNEntryPage = contains "numeric-field msisdn"
 
 isOfferExpiredPage :: T.Text -> Bool
-isOfferExpiredPage = (/= T.empty) . snd . T.breakOn "This offer has expired."
+isOfferExpiredPage = contains "This offer has expired."
 
 innerText :: T.Text -> Either String [HQ.Tag] -> Either String T.Text
 innerText selector = fmap T.concat . innerTexts selector
