@@ -175,7 +175,13 @@ hasKeyword :: T.Text -> Bool
 hasKeyword = (/= T.empty) . snd . T.breakOn "keyword"
 
 hasPin :: T.Text -> Bool
-hasPin = (/= T.empty) . snd . T.breakOn "numeric-field pin pin-input"
+hasPin = (/= T.empty) . snd . T.breakOnEnd "numeric-field pin pin-input"
+
+isMSISDNEntryPage :: T.Text -> Bool
+isMSISDNEntryPage = (/= T.empty) . snd . T.breakOnEnd "numeric-field msisdn"
+
+isOfferExpiredPage :: T.Text -> Bool
+isOfferExpiredPage = (/= T.empty) . snd . T.breakOn "This offer has expired."
 
 innerText :: T.Text -> Either String [HQ.Tag] -> Either String T.Text
 innerText selector = fmap T.concat . innerTexts selector
@@ -190,7 +196,7 @@ innerTexts selector html =
 
 validatePINSubmission :: (b, BS.ByteString) -> Submission C.HttpException BS.ByteString b
 validatePINSubmission (url, bs)
-  | hasPin content = X.throwE $ APIError InvalidPIN (either (const bs) E.encodeUtf8 errMsg)
+  | or $ sequence [ hasPin, isMSISDNEntryPage, isOfferExpiredPage ] content = X.throwE $ APIError InvalidPIN (either (const bs) E.encodeUtf8 errMsg)
   | otherwise = return url
   where
     content = E.decodeUtf8 bs
