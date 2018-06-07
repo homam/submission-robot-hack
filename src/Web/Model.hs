@@ -88,6 +88,10 @@ doMigrationsWithPool :: Pool SqlBackend -> IO ()
 doMigrationsWithPool pool = flip runSqlPersistMPool pool $
     runMigration migrateAll
 
+showMigrationsWithPool :: Pool SqlBackend -> IO [Text]
+showMigrationsWithPool pool =
+  flip runSqlPersistMPool pool $ showMigration migrateAll
+
 runDb :: (MonadIO (t m), MonadReader AppState m, MonadTrans t) => ReaderT SqlBackend IO b -> t m b
 runDb query = do
   run <- lift $ asks runSql
@@ -108,6 +112,9 @@ runApp connStr appf =
 
 doMigrations :: (MonadTrans t, MonadReader AppState m, MonadIO (t m)) => t m ()
 doMigrations = runDb (runMigration migrateAll)
+
+showMigrations :: (MonadTrans t, MonadReader AppState m, MonadIO (t m)) => t m [Text]
+showMigrations = runDb (showMigration migrateAll)
 
 addMSISDNSubmission ::
      (MonadTrans t, MonadReader AppState m, MonadIO (t m))

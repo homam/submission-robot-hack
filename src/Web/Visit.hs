@@ -25,6 +25,7 @@ import qualified Data.HashMap.Strict       as M
 import           Data.Maybe                (fromMaybe, maybe)
 import           Data.Monoid               ((<>))
 import           Data.Text                 (Text, pack, toLower, unpack)
+import qualified Data.Text                 as T
 import qualified Data.Text.Encoding        as E
 import qualified Data.Text.Lazy            as TL
 import           GHC.Generics
@@ -41,7 +42,7 @@ import           Web.WebM
 doMigrationsWeb :: WebMApp ()
 doMigrationsWeb =
   getAndHead "/do_migrations" $
-    doMigrations >> text "done!"
+    TL.fromStrict . T.concat <$> showMigrations >>= text
 
 
 toSubmissionResult :: Text -> Either (S.SubmissionError S.HttpException BS.ByteString) a -> SubmissionResult
