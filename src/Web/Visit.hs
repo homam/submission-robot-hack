@@ -19,17 +19,19 @@ import           Control.Monad.IO.Class    (liftIO)
 import           Control.Monad.Zip         (mzip)
 import qualified Data.Aeson                as A
 import qualified Data.Aeson.Types          as AT
+import           Data.Bifunctor            (bimap)
 import qualified Data.ByteString           as BS
 import qualified Data.HashMap.Strict       as M
 import           Data.Maybe                (fromMaybe, maybe)
 import           Data.Monoid               ((<>))
 import           Data.Text                 (Text, pack, toLower, unpack)
 import qualified Data.Text.Encoding        as E
-import qualified Data.Text.Encoding        as Encoding
 import qualified Data.Text.Lazy            as TL
 import           GHC.Generics
+import           Network.HTTP.Types        (parseQueryText)
 import           Network.HTTP.Types.Status (status500)
 import qualified Network.URI               as U
+import qualified Network.Wai               as W
 import qualified Sam.Robot                 as S
 import qualified Web.JewlModel             as JM
 import           Web.Localization          (decrypt', encrypt', toLocalMSISDN)
@@ -93,31 +95,58 @@ instance A.ToJSON FinalResult where
     AT.Object o = A.toJSON s
     v           = A.toJSON u
 
+parseEncodedParams :: BS.ByteString -> [(Text, Text)]
+parseEncodedParams bs =
+  [ (k, fromMaybe "" v)
+  | (k, v) <- parseQueryText bs
+  ]
+
+queryStringParams :: ActionT TL.Text WebM [(Text, Text)]
+queryStringParams = parseEncodedParams . W.rawQueryString <$> request
+
 msisdnSubmissionWeb :: WebMApp ()
 msisdnSubmissionWeb =
   getAndHead "/submit_msisdn/:domain/:country/:handle/:offer" $
-    join $ msisdnSubmissionAction False <$> param "domain" <*> param "country" <*> param "handle" <*> param "offer"
-    <*> (pack <$> (toLocalMSISDN <$> (unpack <$> param "country") <*> (unpack <$> param "msisdn")))
+    join $ msisdnSubmissionAction False
+                              <$> param "domain"
+                              <*> param "country"
+                              <*> param "handle"
+                              <*> param "offer"
+                              <*> (pack <$> (toLocalMSISDN <$> (unpack <$> param "country") <*> (unpack <$> param "msisdn")))
+                              <*> (filter ((/= "msisdn") . fst) <$> queryStringParams)
 
 msisdnSubmissionWebForMOFlow :: WebMApp ()
 msisdnSubmissionWebForMOFlow =
   getAndHead "/submit_msisdn_mo/:domain/:country/:handle/:offer" $
-    join $ msisdnSubmissionAction True <$> param "domain" <*> param "country" <*> param "handle" <*> param "offer"
-    <*> (pack <$> (toLocalMSISDN <$> (unpack <$> param "country") <*> (unpack <$> param "msisdn")))
+    join $ msisdnSubmissionAction True
+                              <$> param "domain"
+                              <*> param "country"
+                              <*> param "handle"
+                              <*> param "offer"
+                              <*> (pack <$> (toLocalMSISDN <$> (unpack <$> param "country") <*> (unpack <$> param "msisdn")))
+                              <*> queryStringParams
 
 --TODO: break it down into two functions
-msisdnSubmissionAction :: Bool -> Text -> Text -> Text -> Int -> Text -> WebMAction ()
-msisdnSubmissionAction isMOFlow domain country handle offer msisdn =
+msisdnSubmissionAction ::
+     Bool
+  -> Text
+  -> Text
+  -> Text
+  -> Int
+  -> Text
+  -> [(Text, Text)]
+  -> WebMAction ()
+msisdnSubmissionAction isMOFlow domain country handle offer msisdn additionalParams =
   if not isMOFlow
     then do
-      res <- liftIO $ S.runSubmission $ S.submitMSISDN (unpack domain) (unpack handle) (unpack country) offer (unpack msisdn)
-      (sid :: Integer) <- fromIntegral . fromSqlKey <$> addMSISDNSubmission domain country handle offer msisdn res
+      res <- liftIO $ S.runSubmission $ S.submitMSISDN (unpack domain) (unpack handle) (unpack country) offer (unpack msisdn) additionalParams'
+      (sid :: Integer) <- fromIntegral . fromSqlKey <$> addMSISDNSubmission domain country handle offer msisdn additionalParams res
       let psid = pack . encrypt' . show $ sid
       addScotchHeader "SubmissionId" (TL.fromStrict psid)
       json $ toSubmissionResult psid res
     else do
-      res <- liftIO $ S.runSubmission $ S.submitMSISDNForMOFlow (unpack domain) (unpack handle) (unpack country) offer (unpack msisdn)
-      (sid :: Integer) <- fromIntegral . fromSqlKey <$> addMSISDNSubmission domain country handle offer msisdn (castToUri <$> res)
+      res <- liftIO $ S.runSubmission $ S.submitMSISDNForMOFlow (unpack domain) (unpack handle) (unpack country) offer (unpack msisdn) additionalParams'
+      (sid :: Integer) <- fromIntegral . fromSqlKey <$> addMSISDNSubmission domain country handle offer msisdn additionalParams (castToUri <$> res)
 
       let psid = pack . encrypt' . show $ sid
       case res of
@@ -132,6 +161,8 @@ msisdnSubmissionAction isMOFlow domain country handle offer msisdn =
   where
     castToUri :: S.MOFlowSubmissionResult -> U.URI
     castToUri (S.MOFlowSubmissionResult keyword' shortcode) = fromMaybe U.nullURI $ U.parseURI $ "sms:" ++ (unpack keyword') ++ "&body=" ++ (unpack shortcode)
+
+    additionalParams' = map (bimap unpack unpack) additionalParams
 
 pinSubmissionWeb :: WebMApp ()
 pinSubmissionWeb =

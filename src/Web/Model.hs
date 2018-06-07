@@ -16,30 +16,34 @@ module Web.Model
     , S.SubmissionErrorType, S.toSubmissionErrorType
     ) where
 
-import           Control.Monad.IO.Class      (MonadIO (..), liftIO)
-import           Control.Monad.Logger        (runNoLoggingT)
-import           Control.Monad.Trans.Reader  (ReaderT (..))
-import           Data.Text                   (Text, pack)
-import qualified Data.Time                   as Time
+import           Control.Monad.IO.Class           (MonadIO (..), liftIO)
+import           Control.Monad.Logger             (runNoLoggingT)
+import           Control.Monad.Trans.Reader       (ReaderT (..))
+import           Data.Aeson                       ((.=))
+import qualified Data.Aeson                       as A
+import           Data.Text                        (Text, pack)
+import qualified Data.Time                        as Time
 import           Database.Persist
 import           Database.Persist.Postgresql
+import           Database.Persist.Postgresql.Json
 import           Database.Persist.TH
 
-import           Control.Monad.Reader        (asks)
-import           Control.Monad.Reader.Class  (MonadReader)
-import           Control.Monad.Trans.Class   (MonadTrans, lift)
-import           Control.Monad.Trans.Control (MonadBaseControl)
 
-import           Data.Pool                   (Pool)
+import           Control.Monad.Reader             (asks)
+import           Control.Monad.Reader.Class       (MonadReader)
+import           Control.Monad.Trans.Class        (MonadTrans, lift)
+import           Control.Monad.Trans.Control      (MonadBaseControl)
+
+import           Data.Pool                        (Pool)
 import           Web.AppState
 
 import           Control.Arrow
-import qualified Data.ByteString             as BS
-import qualified Data.Text.Encoding          as E
-import qualified Data.Time.Clock.POSIX       as POSIX
-import qualified Database.Redis              as R
-import qualified Network.URI                 as U
-import qualified Sam.Robot                   as S
+import qualified Data.ByteString                  as BS
+import qualified Data.Text.Encoding               as E
+import qualified Data.Time.Clock.POSIX            as POSIX
+import qualified Database.Redis                   as R
+import qualified Network.URI                      as U
+import qualified Sam.Robot                        as S
 
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
@@ -52,6 +56,7 @@ MSISDNSubmission sql=msisdn_submissions json
   domain Text
   offer Int
   msisdn Text
+  queryString Json Maybe
   isValid Bool
   errorText Text Maybe
   finalUrl Text Maybe
@@ -106,10 +111,10 @@ doMigrations = runDb (runMigration migrateAll)
 
 addMSISDNSubmission ::
      (MonadTrans t, MonadReader AppState m, MonadIO (t m))
-  => Text -> Text -> Text -> Int -> Text -> Either (S.SubmissionError S.HttpException BS.ByteString) U.URI -> t m (Key MSISDNSubmission)
-addMSISDNSubmission domain country handle offer msisdn res = do
+  => Text -> Text -> Text -> Int -> Text -> [(Text, Text)] -> Either (S.SubmissionError S.HttpException BS.ByteString) U.URI -> t m (Key MSISDNSubmission)
+addMSISDNSubmission domain country handle offer msisdn queryString res = do
   submissionId <- newSubmissionId
-  let obj = addValidationRes res $ MSISDNSubmission (Just submissionId) country handle domain offer msisdn
+  let obj = addValidationRes res $ MSISDNSubmission (Just submissionId) country handle domain offer msisdn (Just $ Json $ A.object $ map (\(k, v) -> k .= v) queryString)
   runDb (insert obj)
 
 addPINSubmission ::

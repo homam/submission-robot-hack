@@ -17,6 +17,7 @@ import           Control.Monad.Except       (liftIO)
 import qualified Control.Monad.Trans.Except as X
 import qualified Data.Aeson                 as A
 import qualified Data.ByteString            as BS
+import           Data.List                  (intercalate)
 import           Data.Monoid                ((<>))
 import           Data.String
 import qualified Data.Text                  as T
@@ -69,8 +70,8 @@ callSAM url = do
     Right r -> return r
 
 -- http://n.mobfun.co/iq/mobile-arts?country=iq&handle=mobile-arts&offer=841&msisdnSubmitted=Y&msisdn%5B0%5D=7814237252&legalCheckbox=Y&incentivizedCheckbox=Y&op_confirmCheckbox=N&identified=1
-submitMSISDN' :: String -> String -> String -> Int -> String -> Submission C.HttpException b (U.URI, BS.ByteString)
-submitMSISDN' domain handle country offer msisdn =
+submitMSISDN' :: String -> String -> String -> Int -> String -> [(String, String)] -> Submission C.HttpException b (U.URI, BS.ByteString)
+submitMSISDN' domain handle country offer msisdn additionalParams =
   callSAM $ "http://" <> domain <> "/" <> country <> "/" <> handle <>
     "?country="
     <> country
@@ -81,6 +82,7 @@ submitMSISDN' domain handle country offer msisdn =
     <>
     "&smart=1&identified=1&msisdnSubmitted=Y&incentivizedCheckbox=Y&legalCheckbox=Y&op_confirmCheckbox=N&msisdn%5B0%5D="
     <> sanitize country msisdn
+    <> "&" <> intercalate "&" (map (\ (k, v) -> k <> "=" <> v)  additionalParams)
   where
   sanitize "iq" ('9':'6':'4':xs) = xs
   sanitize "gr" ('3':'0':xs)     = xs
@@ -228,15 +230,37 @@ makePINUrl pin url = U.URI (U.uriScheme url) (U.uriAuthority url) (U.uriPath url
       "_extracted"
       ]) . fst) $ U.parseQuery $ E.encodeUtf8 $ T.pack $ U.uriQuery url'
 
-submitMSISDN :: String -> String -> String -> Int -> String -> X.ExceptT (SubmissionError C.HttpException BS.ByteString) IO U.URI
-submitMSISDN d h c o m = do
-  res <- submitMSISDN' d h c o m
+submitMSISDN ::
+     String
+  -> String
+  -> String
+  -> Int
+  -> String
+  -> [(String, String)]
+  -> X.ExceptT
+       (SubmissionError C.HttpException BS.ByteString)
+       IO
+       U.URI
+submitMSISDN d h c o m additionalParams = do
+  res <- submitMSISDN' d h c o m additionalParams
   validateMSISDNSubmission res
 
 
-submitMSISDNForMOFlow :: String -> String -> String -> Int -> String -> X.ExceptT (SubmissionError C.HttpException BS.ByteString) IO MOFlowSubmissionResult
-submitMSISDNForMOFlow d h c o m = do
-  res <- submitMSISDN' d h c o m
+
+submitMSISDNForMOFlow ::
+     String
+  -> String
+  -> String
+  -> Int
+  -> String
+  -> [(String, String)]
+  -> X.ExceptT
+       (SubmissionError C.HttpException BS.ByteString)
+       IO
+       MOFlowSubmissionResult
+
+submitMSISDNForMOFlow d h c o m additionalParams = do
+  res <- submitMSISDN' d h c o m additionalParams
   validateMSISDNSubmissionForMOFlow res
 
 
@@ -254,7 +278,7 @@ main = do
     msisdn <- liftIO $ do
       putStrLn "MSISDN?"
       readLn
-    url <- validateMSISDNSubmission =<< submitMSISDN' "n.mobfun.co" "mobile-arts" "iq" 841 msisdn
+    url <- validateMSISDNSubmission =<< submitMSISDN' "n.mobfun.co" "mobile-arts" "iq" 841 msisdn []
     liftIO $ putStrLn "MSISDN Submission Successful"
     pin <- liftIO $ do
       putStrLn "PIN?"
