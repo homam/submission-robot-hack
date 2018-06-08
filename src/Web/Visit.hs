@@ -125,7 +125,7 @@ msisdnSubmissionWebForMOFlow =
                               <*> param "handle"
                               <*> param "offer"
                               <*> (pack <$> (toLocalMSISDN <$> (unpack <$> param "country") <*> (unpack <$> param "msisdn")))
-                              <*> queryStringParams
+                              <*> (filter ((/= "msisdn") . fst) <$> queryStringParams)
 
 --TODO: break it down into two functions
 msisdnSubmissionAction ::
