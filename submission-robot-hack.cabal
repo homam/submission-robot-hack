@@ -20,7 +20,7 @@ library
                      , Web.Localization
                      , Web.AppState, Web.Model, Web.WebM, Web.Visit
                      , Web.Utils.LogMiddleware
-                     , Sam.Robot
+                     , Robot.Types, Robot.Sam, Robot.PG
   build-depends:       base >= 4.7 && < 5
                      , persistent >= 2.7.0
                      , monad-logger

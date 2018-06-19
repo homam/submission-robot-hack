@@ -1,10 +1,7 @@
-{-# LANGUAGE DeriveAnyClass    #-}
-{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes        #-}
-{-# LANGUAGE TemplateHaskell   #-}
 
-module Sam.Robot
+module Robot.Sam
 (
     submitMSISDN, submitMSISDNForMOFlow, submitPIN, runSubmission, C.HttpException (..), SubmissionError (..), APIErrorType (..), MOFlowSubmissionResult (..)
   , SubmissionErrorType (..), toSubmissionErrorType
@@ -15,7 +12,6 @@ import           Control.Exception          (try)
 import           Control.Monad              (join)
 import           Control.Monad.Except       (liftIO)
 import qualified Control.Monad.Trans.Except as X
-import qualified Data.Aeson                 as A
 import qualified Data.ByteString            as BS
 import           Data.List                  (intercalate)
 import           Data.Monoid                ((<>))
@@ -23,38 +19,12 @@ import           Data.String
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as E
 import qualified Data.Text.IO               as T
-import           Database.Persist.TH
-import           GHC.Generics               (Generic)
 import qualified Haquery                    as HQ
 import qualified Network.HTTP.Client        as C
 import qualified Network.HTTP.Types.Header  as Header
 import qualified Network.HTTP.Types.URI     as U
 import qualified Network.URI                as U
-
-
-type Submission e b = X.ExceptT (SubmissionError e b) IO
-data SubmissionError e b = NetworkError e | APIError APIErrorType b deriving (Show)
-
-data MOFlowSubmissionResult = MOFlowSubmissionResult {  keyword :: T.Text, shortcode :: T.Text } deriving (Show, Read, Eq, Ord, Generic, A.ToJSON, A.FromJSON)
-
-data APIErrorType = InvalidMSISDN | InvalidPIN | AlreadySubscribed | ExceededMSISDNSubmissions | UnknownError | KeywordAndShortcodeNotFound deriving Show
-
-data SubmissionErrorType = SENetworkError | SEInvalidMSISDN | SEInvalidPIN | SEAlreadySubscribed | SEExceededMSISDNSubmissions | SEUnknownError | SEKeywordAndShortcodeNotFound deriving (Show, Read, Enum, Eq, Ord, Bounded, Generic, A.ToJSON, A.FromJSON)
-derivePersistField "SubmissionErrorType"
-
-toSubmissionErrorType :: SubmissionError e b -> SubmissionErrorType
-toSubmissionErrorType (NetworkError _              ) = SENetworkError
-toSubmissionErrorType (APIError InvalidMSISDN     _) = SEInvalidMSISDN
-toSubmissionErrorType (APIError InvalidPIN        _) = SEInvalidPIN
-toSubmissionErrorType (APIError AlreadySubscribed _) = SEAlreadySubscribed
-toSubmissionErrorType (APIError ExceededMSISDNSubmissions _) = SEExceededMSISDNSubmissions
-toSubmissionErrorType (APIError KeywordAndShortcodeNotFound _) = SEKeywordAndShortcodeNotFound
-toSubmissionErrorType (APIError UnknownError _) = SEUnknownError
-
-
-
-runSubmission :: Submission e b a -> IO (Either (SubmissionError e b) a)
-runSubmission = X.runExceptT
+import           Robot.Types
 
 callSAM :: String -> Submission C.HttpException b (U.URI, BS.ByteString)
 callSAM url = do
@@ -173,9 +143,6 @@ validateMSISDNSubmissionForMOFlow (_, bs)
     lookup' :: (a -> Bool) -> [(a, b)] -> Maybe b
     lookup' p = fmap snd . safeHead . filter (p . fst)
 
-contains :: T.Text -> T.Text -> Bool
-contains s = (/= T.empty) . snd . T.breakOn s
-
 hasKeyword :: T.Text -> Bool
 hasKeyword = contains "keyword"
 
@@ -187,17 +154,6 @@ isMSISDNEntryPage = contains "numeric-field msisdn"
 
 isOfferExpiredPage :: T.Text -> Bool
 isOfferExpiredPage = contains "This offer has expired."
-
-innerText :: T.Text -> Either String [HQ.Tag] -> Either String T.Text
-innerText selector = fmap T.concat . innerTexts selector
-
-innerTexts :: T.Text -> Either String [HQ.Tag] -> Either String [T.Text]
-innerTexts selector html =
-  fmap join
-    .   sequence
-    <$> map (fmap (map HQ.innerText) . HQ.select selector)
-    =<< html
-
 
 validatePINSubmission :: (b, BS.ByteString) -> Submission C.HttpException BS.ByteString b
 validatePINSubmission (url, bs)

@@ -33,7 +33,7 @@ import           Network.HTTP.Types        (parseQueryText)
 import           Network.HTTP.Types.Status (status500)
 import qualified Network.URI               as U
 import qualified Network.Wai               as W
-import qualified Sam.Robot                 as S
+import qualified Robot.Sam                 as S
 import qualified Web.JewlModel             as JM
 import           Web.Localization          (decrypt', encrypt', toLocalMSISDN)
 import           Web.Model

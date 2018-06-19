@@ -43,7 +43,7 @@ import qualified Data.Text.Encoding               as E
 import qualified Data.Time.Clock.POSIX            as POSIX
 import qualified Database.Redis                   as R
 import qualified Network.URI                      as U
-import qualified Sam.Robot                        as S
+import qualified Robot.Sam                        as S
 
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
