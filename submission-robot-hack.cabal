@@ -19,6 +19,7 @@ library
                      , Web.JewlModel
                      , Web.Localization
                      , Web.AppState, Web.Model, Web.WebM, Web.Visit
+                     , Web.SaleLongPolling
                      , Web.Utils.LogMiddleware
                      , Robot.Types, Robot.Sam, Robot.PG
   build-depends:       base >= 4.7 && < 5
@@ -62,6 +63,9 @@ library
                      , hspec-expectations >= 0.8 && < 0.9
                      , haquery
                      , safe-exceptions
+                     , random
+                     , async
+                     , http-client-tls
   default-language:    Haskell2010
   ghc-options:         -W -threaded -rtsopts -with-rtsopts=-N
 

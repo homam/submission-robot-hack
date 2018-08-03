@@ -10,7 +10,14 @@ import qualified Web.WebM           as W
 
 
 myApp :: W.WebMApp ()
-myApp = doMigrationsWeb >> msisdnExistsWeb >> msisdnSubmissionWeb >> msisdnSubmissionWebForMOFlow >> pinSubmissionWeb
+myApp =
+  doMigrationsWeb
+    >> latestSalesWeb
+    >> msisdnExistsWeb
+    >> msisdnSubmissionWeb
+    >> msisdnSubmissionWebForMOFlow
+    >> pinSubmissionWeb
+
 
 main :: Int -> String -> String -> IO ()
 main port jewlDb db = W.runWebServer port

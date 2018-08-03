@@ -9,6 +9,7 @@ module Web.Visit(
   , msisdnSubmissionWebForMOFlow
   , pinSubmissionWeb
   , msisdnExistsWeb
+  , latestSalesWeb
   , SubmissionResult (..)
 )
 where
@@ -43,6 +44,15 @@ doMigrationsWeb :: WebMApp ()
 doMigrationsWeb =
   getAndHead "/do_migrations" $
     TL.fromStrict . T.concat <$> showMigrations >>= text
+
+latestSalesWeb :: WebMApp ()
+latestSalesWeb =
+  getAndHead "/latest_sales" $ go
+  where
+    go = text "sales"
+    -- go = do
+    --   sales <- getLatestRedshiftSales
+    --   json sales
 
 
 toSubmissionResult :: Text -> Either (S.SubmissionError S.HttpException BS.ByteString) a -> SubmissionResult
@@ -96,14 +106,13 @@ instance A.ToJSON FinalResult where
     AT.Object o = A.toJSON s
     v           = A.toJSON u
 
-parseEncodedParams :: BS.ByteString -> [(Text, Text)]
-parseEncodedParams bs =
-  [ (k, fromMaybe "" v)
-  | (k, v) <- parseQueryText bs
-  ]
-
 queryStringParams :: ActionT TL.Text WebM [(Text, Text)]
-queryStringParams = parseEncodedParams . W.rawQueryString <$> request
+queryStringParams = parseEncodedParams . W.rawQueryString <$> request where
+  parseEncodedParams :: BS.ByteString -> [(Text, Text)]
+  parseEncodedParams bs =
+    [ (k, fromMaybe "" v)
+    | (k, v) <- parseQueryText bs
+    ]
 
 msisdnSubmissionWeb :: WebMApp ()
 msisdnSubmissionWeb =

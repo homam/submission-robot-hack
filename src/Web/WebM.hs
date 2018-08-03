@@ -18,6 +18,7 @@ import           Data.Pool                   ()
 
 import qualified Data.Pool                   as P
 
+import qualified Control.Concurrent.Async    as Async
 import           Control.Exception           as Ex
 import           Data.Text
 import qualified Data.Text.Lazy              as TL
@@ -28,6 +29,7 @@ import           Network.HTTP.Types          (StdMethod (..))
 import qualified Network.Wai                 as W
 import           Web.AppState
 import           Web.Model
+import qualified Web.SaleLongPolling         as SaleLongPolling
 import           Web.Scotty                  (RoutePattern)
 import           Web.Scotty.Trans            (ActionT, ScottyError, ScottyT,
                                               addHeader, addroute, get, header,
@@ -36,6 +38,7 @@ import           Web.Scotty.Trans            (ActionT, ScottyError, ScottyT,
                                               redirect, request, scottyT,
                                               status, text)
 import           Web.Utils.LogMiddleware     (logAllMiddleware)
+
 
 newtype WebM a = WebM { unWebM :: ReaderT AppState IO a }
   deriving (Applicative, Functor, Monad, MonadIO, MonadReader AppState)
@@ -55,7 +58,9 @@ addScotchHeader :: Monad m => TL.Text -> TL.Text -> ActionT e m ()
 addScotchHeader name = addHeader ("X-Scotch-" <> name)
 
 runWeb :: R.Connection -> P.Pool PS.Connection -> DB.ConnectionPool -> forall a. WebM a -> IO a
-runWeb redisConn jewlPool pool = runActionToIO where
+runWeb redisConn jewlPool pool webm = do
+  sales <- SaleLongPolling.runSaleLongPoolling appState SaleLongPolling.loop
+  runActionToIO webm where
   appState = AppState {
         echo = putStrLn . (unpack :: Text -> String)
       , runRedis = R.runRedis redisConn

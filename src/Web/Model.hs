@@ -13,6 +13,7 @@
 module Web.Model
     (
       module Web.Model
+    , Entity
     , S.SubmissionErrorType, S.toSubmissionErrorType
     ) where
 
@@ -42,6 +43,7 @@ import qualified Data.ByteString                  as BS
 import qualified Data.Text.Encoding               as E
 import qualified Data.Time.Clock.POSIX            as POSIX
 import qualified Database.Redis                   as R
+import           GHC.Generics                     (Generic)
 import qualified Network.URI                      as U
 import qualified Robot.Sam                        as S
 
@@ -73,7 +75,24 @@ PINSubmission sql=pin_submissions json
   errorText Text Maybe
   finalUrl Text Maybe
   deriving Show
+
+LastRSSales MigrationOnly sql=LastRSSales json
+  msisdn Text
+  country Text Maybe
+  affiliateId Text Maybe
+  creationDatetime Time.UTCTime Maybe
+  Primary msisdn
+  deriving Show
 |]
+
+-- share [mkPersist sqlSettings, mkSave "migrateNone"] [persistLowerCase|
+-- LastRSSales json
+--   msisdn Text Maybe
+--   country Text Maybe
+--   affiliateId Text Maybe
+--   creationDatetime Time.UTCTime Maybe
+--   deriving Show
+-- |]
 
 newtype AppStateM a = AppStateM {
     runAppStateM :: ReaderT AppState IO a
@@ -96,6 +115,15 @@ runDb :: (MonadIO (t m), MonadReader AppState m, MonadTrans t) => ReaderT SqlBac
 runDb query = do
   run <- lift $ asks runSql
   liftIO (run query)
+
+runDb'
+  :: (MonadIO m, MonadReader AppState m)
+  => ReaderT SqlBackend IO b
+  -> m b
+runDb' query = do
+  run <- asks runSql
+  liftIO $ run query
+
 
 runRedisCommand :: (MonadIO (t m), MonadReader AppState m, MonadTrans t) => R.Redis b -> t m b
 runRedisCommand command = do
@@ -147,11 +175,28 @@ addValidationRes res f = f
   (Just . S.toSubmissionErrorType ||| const Nothing $ res)
  where
   submissionErrorToText (S.NetworkError e                 ) = pack $ show e
-  submissionErrorToText (S.APIError S.InvalidMSISDN     bs) = E.decodeUtf8 bs
-  submissionErrorToText (S.APIError S.AlreadySubscribed bs) = E.decodeUtf8 bs
-  submissionErrorToText (S.APIError S.ExceededMSISDNSubmissions bs) = E.decodeUtf8 bs
-  submissionErrorToText (S.APIError S.InvalidPIN bs) = E.decodeUtf8 bs
-  submissionErrorToText (S.APIError S.KeywordAndShortcodeNotFound bs) = E.decodeUtf8 bs
-  submissionErrorToText (S.APIError S.UnknownError bs) = E.decodeUtf8 bs
+  submissionErrorToText (S.APIError _     bs)               = E.decodeUtf8 bs
 
 
+
+
+-- getLatestRedshiftSales :: MonadIO m => ReaderT SqlBackend m [Entity LastRSSales]
+getLatestRedshiftSales
+  :: ( MonadIO m
+     , MonadReader AppState m
+     )
+  => m [Entity LastRSSales]
+getLatestRedshiftSales =
+  -- runDb $ rawSql "SELECT ?? FROM public.latest_redshift_sales() as \"LastRSSales\" LIMIT ?" [toPersistValue (1000 :: Int)]
+
+  runDb' $ rawSql "SELECT ?? \n\
+    \ FROM dblink('redshift_server', $REDSHIFT$ \n\
+    \ SELECT msisdn, country, affiliate_id, creation_datetime \n\
+    \ from pacman.live p \n\
+    \ where p.creation_datetime > dateadd(MINUTE, -10, SYSDATE) \n\
+    \ and event_type = 'sale' \n\
+    \ order by p.creation_datetime desc \n\
+    \ limit 1000 \n\
+    \ $REDSHIFT$) as \"LastRSSales\" (msisdn text, country text, affiliate_id text, creation_datetime timestamp) \n\
+    \ "
+    []

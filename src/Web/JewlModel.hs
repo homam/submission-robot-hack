@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -5,7 +6,7 @@
 {-# LANGUAGE QuasiQuotes           #-}
 
 module Web.JewlModel (
-  msisdnStatus, runJewlDb, FinalResult (..)
+  msisdnStatus, runJewlDb, FinalResult (..) --, getLatestRedshiftSales
 ) where
 
 import           Control.Monad.IO.Class               (MonadIO (..), liftIO)
@@ -17,6 +18,7 @@ import qualified Data.Aeson.Types                     as AT
 import           Data.Char                            (toUpper)
 import qualified Data.HashMap.Strict                  as M
 import qualified Data.Text                            as T
+import qualified Data.Time                            as Time
 import qualified Database.PostgreSQL.Simple           as PS
 import           Database.PostgreSQL.Simple.FromField (FromField)
 import           Database.PostgreSQL.Simple.SqlQQ     (sql)
@@ -25,7 +27,8 @@ import           Web.AppState
 import           Web.Localization                     (toLocalMSISDN)
 
 
-data MSISDNExists a = MSISDNExists { msisdn :: String, optout :: a } deriving (Show, Generic)
+
+data MSISDNExists a = MSISDNExists { _msisdn :: String, optout :: a } deriving (Show, Generic)
 instance FromField a => PS.FromRow (MSISDNExists a)
 instance A.ToJSON a => A.ToJSON (MSISDNExists a)
 
@@ -46,7 +49,7 @@ msisdnStatus country msisdn' conn = toFinalResult . map normalize <$> PS.query
    [sql|
     SELECT TOP 1 msisdn, optout from user_subscriptions WHERE timestamp > ? and country_code = ? and msisdn = ?
     |]
-  ("2017-11-01" :: String, normalizeCountry country, toLocalMSISDN country msisdn')
+  ("2018-03-01" :: String, normalizeCountry country, toLocalMSISDN country msisdn')
   where
     normalize :: MSISDNExists Int -> MSISDNExists Bool
     normalize m = m { optout = optout m > 0 }
@@ -57,6 +60,22 @@ msisdnStatus country msisdn' conn = toFinalResult . map normalize <$> PS.query
     toFinalResult [] = FinalResult Nothing False
     toFinalResult (MSISDNExists _ True:_)  = FinalResult Nothing False
     toFinalResult (MSISDNExists _ False:_) = FinalResult (Just "http://gr.mobiworldbiz.com/?uid=fdf098fcc6&uip=2.84.0.0") True
+
+
+
+-- data LatestRefshiftSale = LatestRedshiftSale {
+--     msisdn            :: T.Text
+--   , country           :: T.Text
+--   , affiliate_id      :: T.Text
+--   , creation_datetime :: Time.UTCTime
+-- } deriving (Show, Generic, A.ToJSON, PS.FromRow)
+
+-- getLatestRedshiftSales :: PS.Connection -> IO [LatestRefshiftSale]
+-- getLatestRedshiftSales conn =
+--   PS.query_
+--     conn
+--     [sql| SELECT * FROM latest_redshift_sales() |]
+
 
 
 runJewlDb :: (MonadIO (t m), MonadReader AppState m, MonadTrans t) => (PS.Connection -> IO b) -> t m b

@@ -61,6 +61,18 @@ submitMSISDN' domain handle country offer msisdn additionalParams =
   sanitize "ee" ('3':'7':'2':xs) = xs
   sanitize _ x                   = x
 
+includeErrors :: IsString t => [(t, APIErrorType)]
+includeErrors =
+  [ ("لقد تجاوزت الحد"                                       , ExceededMSISDNSubmissions)
+  , ("الرقم الذي ادخلته غير صحيح"                               , InvalidMSISDN)
+  , ("Θα λάβεις τώρα τον προσωπικό"                     , AlreadySubscribed)
+  , ("Ο αριθμός του κινητού σας δεν είναι σωστός"       , InvalidMSISDN)
+  , ("Τώρα έλαβες ένα SMS"                              , AlreadySubscribed)
+  , ("El numero que has introducido no es correcto"     , InvalidMSISDN)
+  , ("Τώρα έλαβες ένα SMS με"                           , AlreadySubscribed)
+  , ("Error del sistema. Por favor, inténtalo de nuevo.", UnknownSystemError)
+  ]
+
 validateMSISDNSubmission :: (U.URI, BS.ByteString) -> Submission C.HttpException BS.ByteString U.URI
 validateMSISDNSubmission (url, bs)
   | hasPin content = return url
@@ -77,17 +89,6 @@ validateMSISDNSubmission (url, bs)
     content = E.decodeUtf8 bs
     html = HQ.parseHtml content
     errMsg = innerText ".errMsg" html
-
-    includeErrors :: IsString t => [(t, APIErrorType)]
-    includeErrors = [
-          ("لقد تجاوزت الحد", ExceededMSISDNSubmissions)
-        , ("الرقم الذي ادخلته غير صحيح", InvalidMSISDN)
-        , ("Θα λάβεις τώρα τον προσωπικό", AlreadySubscribed)
-        , ("Ο αριθμός του κινητού σας δεν είναι σωστός", InvalidMSISDN)
-        , ("Τώρα έλαβες ένα SMS", AlreadySubscribed)
-        , ("El numero que has introducido no es correcto", InvalidMSISDN)
-        , ("Τώρα έλαβες ένα SMS με", AlreadySubscribed)
-      ]
 
     safeHead []    = Nothing
     safeHead (x:_) = Just x
@@ -125,17 +126,6 @@ validateMSISDNSubmissionForMOFlow (_, bs)
     toKeywordaAndShortCode [] = Left "Keyword and Shortcode not found on the Page"
     toKeywordaAndShortCode (_:[]) = Left "Keyword or Shortcode not found on the Page"
     toKeywordaAndShortCode (a:b:_) = Right (a, b)
-
-    includeErrors :: IsString t => [(t, APIErrorType)]
-    includeErrors = [
-          ("لقد تجاوزت الحد", ExceededMSISDNSubmissions)
-        , ("الرقم الذي ادخلته غير صحيح", InvalidMSISDN)
-        , ("Θα λάβεις τώρα τον προσωπικό", AlreadySubscribed)
-        , ("Ο αριθμός του κινητού σας δεν είναι σωστός", InvalidMSISDN)
-        , ("Τώρα έλαβες ένα SMS", AlreadySubscribed)
-        , ("El numero que has introducido no es correcto", InvalidMSISDN)
-        , ("Τώρα έλαβες ένα SMS με", AlreadySubscribed)
-      ]
 
     safeHead []    = Nothing
     safeHead (x:_) = Just x
@@ -193,14 +183,13 @@ submitMSISDN ::
   -> Int
   -> String
   -> [(String, String)]
-  -> X.ExceptT
-       (SubmissionError C.HttpException BS.ByteString)
-       IO
+  -> Submission
+       C.HttpException
+       BS.ByteString
        U.URI
 submitMSISDN d h c o m additionalParams = do
   res <- submitMSISDN' d h c o m additionalParams
   validateMSISDNSubmission res
-
 
 
 submitMSISDNForMOFlow ::
@@ -210,11 +199,10 @@ submitMSISDNForMOFlow ::
   -> Int
   -> String
   -> [(String, String)]
-  -> X.ExceptT
-       (SubmissionError C.HttpException BS.ByteString)
-       IO
+  -> Submission
+       C.HttpException
+       BS.ByteString
        MOFlowSubmissionResult
-
 submitMSISDNForMOFlow d h c o m additionalParams = do
   res <- submitMSISDN' d h c o m additionalParams
   validateMSISDNSubmissionForMOFlow res
