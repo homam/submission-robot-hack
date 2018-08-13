@@ -17,6 +17,7 @@ where
 import           Control.Arrow
 import           Control.Monad             (join)
 import           Control.Monad.IO.Class    (liftIO)
+import           Control.Monad.Reader
 import           Control.Monad.Zip         (mzip)
 import qualified Data.Aeson                as A
 import qualified Data.Aeson.Types          as AT
@@ -25,6 +26,7 @@ import qualified Data.ByteString           as BS
 import qualified Data.HashMap.Strict       as M
 import           Data.Maybe                (fromMaybe, maybe)
 import           Data.Monoid               ((<>))
+import           Data.String               (IsString)
 import           Data.Text                 (Text, pack, toLower, unpack)
 import qualified Data.Text                 as T
 import qualified Data.Text.Encoding        as E
@@ -35,6 +37,7 @@ import           Network.HTTP.Types.Status (status500)
 import qualified Network.URI               as U
 import qualified Network.Wai               as W
 import qualified Robot.Sam                 as S
+import           Web.AppState
 import qualified Web.JewlModel             as JM
 import           Web.Localization          (decrypt', encrypt', toLocalMSISDN)
 import           Web.Model
@@ -63,14 +66,18 @@ toSubmissionResult submissionId' res = SubmissionResult {
   , errorText = Just . submissionErrorToText . S.toSubmissionErrorType ||| const Nothing $ res
   , errorType = (Just . S.toSubmissionErrorType ||| const Nothing $ res)
   }
-  where
-    submissionErrorToText S.SENetworkError      = "Network Error"
-    submissionErrorToText S.SEInvalidMSISDN   = "MSISDN Validation Failed"
-    submissionErrorToText S.SEInvalidPIN = "PIN Validation Failed"
-    submissionErrorToText S.SEAlreadySubscribed = "MSISDN is already subscribed"
-    submissionErrorToText S.SEExceededMSISDNSubmissions = "Exceeded MSISDN Submissions"
-    submissionErrorToText S.SEUnknownError = "Unknown Error"
-    submissionErrorToText S.SEKeywordAndShortcodeNotFound = "Keyword and Shortcode not found"
+
+submissionErrorToText :: IsString p => SubmissionErrorType -> p
+submissionErrorToText S.SENetworkError      = "Network Error"
+submissionErrorToText S.SEInvalidMSISDN   = "MSISDN Validation Failed"
+submissionErrorToText S.SEInvalidPIN = "PIN Validation Failed"
+submissionErrorToText S.SEAlreadySubscribed = "MSISDN is already subscribed"
+submissionErrorToText S.SEExceededMSISDNSubmissions = "Exceeded MSISDN Submissions"
+submissionErrorToText S.SEUnknownError = "Unknown Error"
+submissionErrorToText S.SEKeywordAndShortcodeNotFound = "Keyword and Shortcode not found"
+submissionErrorToText S.SEUnknownSystemError = "Unknown System Error"
+submissionErrorToText S.SELandingPageNotFound = "Landing page not found"
+submissionErrorToText S.SEUnableToParseHTML = "Unable to parse HTML"
 
 toSubmissionResultForMOFlow :: Text -> Either (S.SubmissionError S.HttpException BS.ByteString) S.MOFlowSubmissionResult -> SubmissionResult
 toSubmissionResultForMOFlow submissionId' res = SubmissionResult {
@@ -80,14 +87,6 @@ toSubmissionResultForMOFlow submissionId' res = SubmissionResult {
   , errorText = Just . submissionErrorToText . S.toSubmissionErrorType ||| const Nothing $ res
   , errorType = (Just . S.toSubmissionErrorType ||| const Nothing $ res)
   }
-  where
-    submissionErrorToText S.SENetworkError      = "Network Error"
-    submissionErrorToText S.SEInvalidMSISDN   = "MSISDN Validation Failed"
-    submissionErrorToText S.SEInvalidPIN = "PIN Validation Failed"
-    submissionErrorToText S.SEAlreadySubscribed = "MSISDN is already subscribed"
-    submissionErrorToText S.SEExceededMSISDNSubmissions = "Exceeded MSISDN Submissions"
-    submissionErrorToText S.SEUnknownError = "Unknown Error"
-    submissionErrorToText S.SEKeywordAndShortcodeNotFound = "Keyword and Shortcode not found"
 
 data SubmissionResult = SubmissionResult {
       isValid      :: Bool
@@ -149,13 +148,21 @@ msisdnSubmissionAction ::
 msisdnSubmissionAction isMOFlow domain country handle offer msisdn additionalParams =
   if not isMOFlow
     then do
-      res <- liftIO $ S.runSubmission $ S.submitMSISDN (unpack domain) (unpack handle) (unpack country) offer (unpack msisdn) additionalParams'
+      appState <- lift ask
+      exists <- liftIO $ msisdnExists appState country msisdn
+      res <- if exists
+              then return $ Left $ S.APIError S.AlreadySubscribed "AlreadySubscribed From Internal Cache"
+              else liftIO $ S.runSubmission $ S.submitMSISDN (unpack domain) (unpack handle) (unpack country) offer (unpack msisdn) additionalParams'
       (sid :: Integer) <- fromIntegral . fromSqlKey <$> addMSISDNSubmission domain country handle offer msisdn additionalParams res
       let psid = pack . encrypt' . show $ sid
       addScotchHeader "SubmissionId" (TL.fromStrict psid)
       json $ toSubmissionResult psid res
     else do
-      res <- liftIO $ S.runSubmission $ S.submitMSISDNForMOFlow (unpack domain) (unpack handle) (unpack country) offer (unpack msisdn) additionalParams'
+      appState <- lift ask
+      exists <- liftIO $ msisdnExists appState country msisdn
+      res <- if exists
+              then return $ Left $ S.APIError S.AlreadySubscribed "AlreadySubscribed From Internal Cache"
+              else liftIO $ S.runSubmission $ S.submitMSISDNForMOFlow (unpack domain) (unpack handle) (unpack country) offer (unpack msisdn) additionalParams'
       (sid :: Integer) <- fromIntegral . fromSqlKey <$> addMSISDNSubmission domain country handle offer msisdn additionalParams (castToUri <$> res)
 
       let psid = pack . encrypt' . show $ sid

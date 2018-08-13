@@ -20,7 +20,7 @@ myApp =
 
 
 main :: Int -> String -> String -> IO ()
-main port jewlDb db = W.runWebServer port
+main port jewlDb db =  W.runWebServer port
                                      R.defaultConnectInfo
                                      (E.encodeUtf8 $ T.pack jewlDb)
                                      (E.encodeUtf8 $ T.pack db)

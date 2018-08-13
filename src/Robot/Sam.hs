@@ -19,12 +19,13 @@ import           Data.String
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as E
 import qualified Data.Text.IO               as T
+-- import           Debug.Trace                (trace)
 import qualified Haquery                    as HQ
 import qualified Network.HTTP.Client        as C
 import qualified Network.HTTP.Types.Header  as Header
 import qualified Network.HTTP.Types.URI     as U
 import qualified Network.URI                as U
-import           Robot.Types
+import           Robot.Types                hiding (handle)
 
 callSAM :: String -> Submission C.HttpException b (U.URI, BS.ByteString)
 callSAM url = do
@@ -111,7 +112,7 @@ validateMSISDNSubmissionForMOFlow (_, bs)
       let eks = keywordAndShortCode
       in case eks of
         Left _   -> X.throwE (APIError KeywordAndShortcodeNotFound bs)
-        Right ks -> return $ uncurry MOFlowSubmissionResult $ ks
+        Right ks -> return $ uncurry MOFlowSubmissionResult ks
 
     content = E.decodeUtf8 bs
     html = HQ.parseHtml content
@@ -120,6 +121,7 @@ validateMSISDNSubmissionForMOFlow (_, bs)
     errMsg = innerText ".errMsg" html
 
     keywordAndShortCode :: Either String (T.Text, T.Text)
+    -- trace (T.unpack content) $
     keywordAndShortCode = toKeywordaAndShortCode =<< innerTexts "main h3 em" html
 
     toKeywordaAndShortCode :: [T.Text] -> Either String (T.Text, T.Text)

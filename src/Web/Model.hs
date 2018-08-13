@@ -43,7 +43,6 @@ import qualified Data.ByteString                  as BS
 import qualified Data.Text.Encoding               as E
 import qualified Data.Time.Clock.POSIX            as POSIX
 import qualified Database.Redis                   as R
-import           GHC.Generics                     (Generic)
 import qualified Network.URI                      as U
 import qualified Robot.Sam                        as S
 
@@ -81,6 +80,12 @@ LastRSSales MigrationOnly sql=LastRSSales json
   country Text Maybe
   affiliateId Text Maybe
   creationDatetime Time.UTCTime Maybe
+  Primary msisdn
+  deriving Show
+
+ExistingSale MigrationOnly sql=ExistingSale json
+  msisdn Text
+  country Text
   Primary msisdn
   deriving Show
 |]
@@ -181,14 +186,13 @@ addValidationRes res f = f
 
 
 -- getLatestRedshiftSales :: MonadIO m => ReaderT SqlBackend m [Entity LastRSSales]
-getLatestRedshiftSales
-  :: ( MonadIO m
+getLatestRedshiftSales ::
+     ( MonadIO m
      , MonadReader AppState m
      )
   => m [Entity LastRSSales]
 getLatestRedshiftSales =
   -- runDb $ rawSql "SELECT ?? FROM public.latest_redshift_sales() as \"LastRSSales\" LIMIT ?" [toPersistValue (1000 :: Int)]
-
   runDb' $ rawSql "SELECT ?? \n\
     \ FROM dblink('redshift_server', $REDSHIFT$ \n\
     \ SELECT msisdn, country, affiliate_id, creation_datetime \n\
@@ -200,3 +204,31 @@ getLatestRedshiftSales =
     \ $REDSHIFT$) as \"LastRSSales\" (msisdn text, country text, affiliate_id text, creation_datetime timestamp) \n\
     \ "
     []
+
+getExistingSales ::
+     ( MonadIO m
+     , MonadReader AppState m
+     )
+  => m [Entity ExistingSale]
+getExistingSales =
+  runDb' $ rawSql "SELECT ?? \n\
+    \ from ( \n\
+    \ select msisdn, country from berg_summary  \n\
+    \ where pin_is_valid \n\
+    \   and creation_time > CURRENT_TIMESTAMP - ('153 day' :: interval) \n\
+    \ group by msisdn, country \n\
+    \ order by country, msisdn \n\
+    \ ) as \"ExistingSale\"  \n\
+    \ "
+    []
+
+getExistingSales' ::
+    ( MonadIO m
+     , MonadReader AppState m
+    )
+  => m [(Text, Text)]
+getExistingSales' = fmap (map go) getExistingSales where
+  go :: Entity ExistingSale -> (Text, Text)
+  go (Entity _ s) = (existingSaleCountry s, existingSaleMsisdn s)
+
+

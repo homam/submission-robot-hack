@@ -18,7 +18,6 @@ import qualified Data.Aeson.Types                     as AT
 import           Data.Char                            (toUpper)
 import qualified Data.HashMap.Strict                  as M
 import qualified Data.Text                            as T
-import qualified Data.Time                            as Time
 import qualified Database.PostgreSQL.Simple           as PS
 import           Database.PostgreSQL.Simple.FromField (FromField)
 import           Database.PostgreSQL.Simple.SqlQQ     (sql)

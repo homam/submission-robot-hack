@@ -11,6 +11,7 @@ module Web.WebM (
   , ActionT, ScottyT, ScottyError, param, text, json, params, get, post, options, redirect, request, status, header, headers, addHeader, addroute
 ) where
 
+import           Control.Concurrent          (forkIO, killThread, threadDelay)
 import           Control.Monad.Reader        (MonadIO, MonadReader)
 import           Control.Monad.Trans.Reader  (ReaderT (..), runReaderT)
 import           Data.Monoid                 ((<>))
@@ -20,7 +21,9 @@ import qualified Data.Pool                   as P
 
 import qualified Control.Concurrent.Async    as Async
 import           Control.Exception           as Ex
-import           Data.Text
+import qualified Data.IORef                  as IORef
+import qualified Data.Set                    as Set
+import           Data.Text                   (Text, unpack)
 import qualified Data.Text.Lazy              as TL
 import qualified Database.Persist.Postgresql as DB
 import qualified Database.PostgreSQL.Simple  as PS
@@ -57,25 +60,19 @@ getAndPostAndHead a b = get a b >> post a b >> shead a b
 addScotchHeader :: Monad m => TL.Text -> TL.Text -> ActionT e m ()
 addScotchHeader name = addHeader ("X-Scotch-" <> name)
 
-runWeb :: R.Connection -> P.Pool PS.Connection -> DB.ConnectionPool -> forall a. WebM a -> IO a
-runWeb redisConn jewlPool pool webm = do
-  sales <- SaleLongPolling.runSaleLongPoolling appState SaleLongPolling.loop
-  runActionToIO webm where
-  appState = AppState {
-        echo = putStrLn . (unpack :: Text -> String)
-      , runRedis = R.runRedis redisConn
-      , runSql = (`DB.runSqlPool` pool)
-      , runJewl = P.withResource jewlPool
-    }
-  runActionToIO m = runReaderT (unWebM m) appState
+runWeb :: AppState -> forall a. WebM a -> IO a
+runWeb appState webm =
+  runReaderT (unWebM webm) appState
 
 runWebM :: R.ConnectInfo -> DB.ConnectionString -> DB.ConnectionString -> WebM b -> IO b
 runWebM redisConnInfo jewlConnStr connStr a = do
   redisConn <- R.checkedConnect redisConnInfo
   jewlPool <- P.createPool (PS.connectPostgreSQL jewlConnStr) PS.close 1 10 10
 
-  runApp connStr (\pool -> runWeb redisConn jewlPool pool a)
-
+  runApp connStr (\pool -> do
+      (_, appState) <- mkAppState redisConn jewlPool pool
+      runWeb appState a
+    )
 
 addServerHeader :: W.Middleware
 addServerHeader =
@@ -89,9 +86,35 @@ runWebServer port redisConnInfo jewlConnStr connStr a = do
   case (,) <$> redisConnE <*> jewlPoolE of
     Left e -> putStrLn e
     Right (redisConn, jewlPool) ->
-      runApp connStr (\pool -> scottyT port (runWeb redisConn jewlPool pool) (middleware logAllMiddleware >> middleware addServerHeader >> a))
+      runApp connStr (\pool -> do
+        (loop, appState) <- mkAppState redisConn jewlPool pool
+        _ <- Async.concurrently
+          loop
+          (scottyT port (runWeb appState) (middleware logAllMiddleware >> middleware addServerHeader >> a))
+        return ()
+      )
 
   where
     mapLeft :: String -> Either SomeException a -> Either String a
     mapLeft s (Left l)  = Left $ s ++ ":\n" ++ show l
     mapLeft _ (Right r) = Right r
+
+mkAppState ::
+     R.Connection
+  -> P.Pool PS.Connection
+  -> P.Pool DB.SqlBackend
+  -> IO (IO (), AppState)
+mkAppState redisConn jewlPool pool = do
+        allSalesRef <- IORef.newIORef Set.empty
+        let msisdnExists' country msisdn = Set.member (country, msisdn) <$> IORef.readIORef allSalesRef
+            appState = AppState {
+            echo = putStrLn . (unpack :: Text -> String)
+          , runRedis = R.runRedis redisConn
+          , runSql = (`DB.runSqlPool` pool)
+          , runJewl = P.withResource jewlPool
+          , msisdnExists = msisdnExists'
+        }
+        let  cacheExistingSales = SaleLongPolling.runSaleLongPoolling appState (SaleLongPolling.loopExistingSales allSalesRef)
+        let  loop = cacheExistingSales >>= print >> threadDelay (120 * 1000 * 1000) >> loop
+        let  handleAsyncError = either print (const $ putStrLn "Completed")
+        return (handleAsyncError =<< Async.waitCatch =<< Async.async loop, appState)
