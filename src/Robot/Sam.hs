@@ -60,6 +60,7 @@ submitMSISDN' domain handle country offer msisdn additionalParams =
   sanitize "mx" ('5':'2':xs)     = xs
   sanitize "sk" ('4':'2':'1':xs) = xs
   sanitize "ee" ('3':'7':'2':xs) = xs
+  sanitize "ae" ('9':'7':'1':xs) = '0':xs
   sanitize _ x                   = x
 
 includeErrors :: IsString t => [(t, APIErrorType)]

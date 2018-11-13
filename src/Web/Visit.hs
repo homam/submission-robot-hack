@@ -208,6 +208,7 @@ pinSubmissionAction sid pin = do
     finalUrl' = finalUrl'' . toLower where
       finalUrl'' "gr" = "http://gr.mobiworldbiz.com/?uid=fdf098fcc6&uip=2.84.0.0"
       finalUrl'' "iq" = "http://iq.mobbfun.com/?uid=fdf098fcc6"
+      finalUrl'' "ae" = "http://ae.mobbfun.com/?uid=YV1-AE-2"
       finalUrl''  _   = "http://gr.mobiworldbiz.com/?uid=fdf098fcc6&uip=2.84.0.0"
 
 
