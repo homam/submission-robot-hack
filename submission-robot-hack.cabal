@@ -21,7 +21,7 @@ library
                      , Web.AppState, Web.Model, Web.WebM, Web.Visit
                      , Web.SaleLongPolling
                      , Web.Utils.LogMiddleware
-                     , Robot.Types, Robot.Sam, Robot.PG
+                     , Robot.Types, Robot.Sam, Robot.PG, Robot.SamMOXHR, Robot.Helpers
   build-depends:       base >= 4.7 && < 5
                      , persistent >= 2.7.0
                      , monad-logger

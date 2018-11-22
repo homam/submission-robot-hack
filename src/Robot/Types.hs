@@ -71,7 +71,7 @@ attrValues attr selector h = do
   return attrs
 
 handle :: [Either e a] -> [a]
-handle = map fromRight' . filter isRight where
+handle = map fromRight' . filter isRight
 
 fromRight' :: Either e a -> a
 fromRight' (Right a) = a
