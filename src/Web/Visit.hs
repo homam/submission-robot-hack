@@ -209,6 +209,8 @@ pinSubmissionAction sid pin = do
       finalUrl'' "gr" = "http://gr.mobiworldbiz.com/?uid=fdf098fcc6&uip=2.84.0.0"
       finalUrl'' "iq" = "http://iq.mobbfun.com/?uid=fdf098fcc6"
       finalUrl'' "ae" = "http://ae.mobbfun.com/?uid=YV1-AE-2"
+      finalUrl'' "sa" = "http://sa.gamezones.biz/?uid=fdf098fcc6"
+      finalUrl'' "bh" = "http://bh.game-lords.com/#/?uid=fdf098fcc6"
       finalUrl''  _   = "http://gr.mobiworldbiz.com/?uid=fdf098fcc6&uip=2.84.0.0"
 
 

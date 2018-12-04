@@ -35,5 +35,7 @@ sanitize "mx" ('5':'2':xs)     = xs
 sanitize "sk" ('4':'2':'1':xs) = xs
 sanitize "ee" ('3':'7':'2':xs) = xs
 sanitize "ae" ('9':'7':'1':xs) = '0':xs
+sanitize "sa" ('9':'6':'6':xs) = '0':xs
+sanitize "bh" ('9':'7':'3':xs) = xs
 sanitize "my" ('6':xs)         = xs
 sanitize _ x                   = x
