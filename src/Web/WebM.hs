@@ -106,7 +106,7 @@ mkAppState ::
   -> IO (IO (), AppState)
 mkAppState redisConn jewlPool pool = do
         allSalesRef <- IORef.newIORef Set.empty
-        let msisdnExists' country msisdn = Set.member (country, msisdn) <$> IORef.readIORef allSalesRef
+        let msisdnExists' country msisdn = return False -- Set.member (country, msisdn) <$> IORef.readIORef allSalesRef
             appState = AppState {
             echo = putStrLn . (unpack :: Text -> String)
           , runRedis = R.runRedis redisConn
