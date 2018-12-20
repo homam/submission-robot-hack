@@ -22,7 +22,7 @@ import qualified Data.Text as T
 import           GHC.Generics                         (Generic)
 import Robot.Helpers (callSAM, sanitize)
 
--- http://m.gamezones.biz/my/api-handle?country=my&handle=api-handle&offer=1&device=smart&isMoXhr=1&msisdn%5B0%5D=01123809094&msisdnSubmitted=Y
+-- http://m.gamezones.biz/my/api-handle?country=my&handle=api-handle&offer=1&device=smart&isAjax=1&msisdn%5B0%5D=01123809094&msisdnSubmitted=Y
 
 data MOXHRSamAPIResult = MOXHRSamAPIResult {
     status :: Bool
@@ -43,7 +43,7 @@ toMOFlowSubmissoinResult = split
       [_body, keyword] -> Just keyword
       _               -> Nothing
 
--- http://m.gamezones.biz/my/battleship?device=smart&offer=1&isMoXhr=1&msisdn%5B0%5D=0174403225&msisdnSubmitted=Y
+-- http://m.gamezones.biz/my/battleship?device=smart&offer=1&isAjax=1&msisdn%5B0%5D=0174403225&msisdnSubmitted=Y
 submitMSISDN' :: String -> String -> String -> Int -> String -> [(String, String)] -> Submission C.HttpException b (U.URI, BS.ByteString)
 submitMSISDN' domain handle country offer msisdn additionalParams =
   callSAM $ "http://" <> domain <> "/" <> country <> "/" <> handle <>
@@ -54,7 +54,7 @@ submitMSISDN' domain handle country offer msisdn additionalParams =
     <> "&offer="
     <> show offer
     <>
-    "&msisdnSubmitted=Y&device=smart&isMoXhr=1&msisdn%5B0%5D="
+    "&msisdnSubmitted=Y&device=smart&isAjax=1&msisdn%5B0%5D="
     <> sanitize country msisdn
     <> "&" <> intercalate "&" (map (\ (k, v) -> k <> "=" <> v)  additionalParams)
 
