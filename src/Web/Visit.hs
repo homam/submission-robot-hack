@@ -157,7 +157,7 @@ msisdnSubmissionAction isMOFlow domain country handle offer msisdn additionalPar
       let psid = pack . encrypt' . show $ sid
       addScotchHeader "SubmissionId" (TL.fromStrict psid)
       json $ toSubmissionResult psid res
-    else do
+    else do -- MOFlow
       appState <- lift ask
       exists <- liftIO $ msisdnExists appState country msisdn
       res <- if exists

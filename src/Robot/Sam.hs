@@ -28,6 +28,7 @@ import qualified Network.URI                as U
 import           Robot.Types                hiding (handle)
 import Robot.Helpers (callSAM, sanitize)
 import qualified Robot.SamMOXHR as MO
+import Control.Arrow
 
 -- http://n.mobfun.co/iq/mobile-arts?country=iq&handle=mobile-arts&offer=841&msisdnSubmitted=Y&msisdn%5B0%5D=7814237252&legalCheckbox=Y&incentivizedCheckbox=Y&op_confirmCheckbox=N&identified=1
 submitMSISDN' :: String -> String -> String -> Int -> String -> [(String, String)] -> Submission C.HttpException b (U.URI, BS.ByteString)
@@ -103,13 +104,20 @@ validateMSISDNSubmissionForMOFlow (_, bs)
     errMsg = innerText ".errMsg" html
 
     keywordAndShortCode :: Either String (T.Text, T.Text)
-    -- trace (T.unpack content) $
-    keywordAndShortCode = toKeywordaAndShortCode =<< innerTexts "main h3 em" html
+    keywordAndShortCode  = 
+      let (sc, kw) = T.drop 1 . snd . T.breakOn ":" *** T.drop 1 . snd . T.breakOn "=" $ T.breakOn "?body=" $ fst . snd $ T.breakOn "\"" <$> T.breakOn "sms:" content
+      in if T.length kw == 0 || T.length sc == 0 
+        then Left "Keyword and Shortcode not found on the Page"
+        else Right (kw, sc)
 
-    toKeywordaAndShortCode :: [T.Text] -> Either String (T.Text, T.Text)
-    toKeywordaAndShortCode [] = Left "Keyword and Shortcode not found on the Page"
-    toKeywordaAndShortCode (_:[]) = Left "Keyword or Shortcode not found on the Page"
-    toKeywordaAndShortCode (a:b:_) = Right (a, b)
+
+    -- keywordAndShortCode :: Either String (T.Text, T.Text)
+    -- keywordAndShortCode = toKeywordaAndShortCode =<< innerTexts "main h3 em" html
+
+    -- toKeywordaAndShortCode :: [T.Text] -> Either String (T.Text, T.Text)
+    -- toKeywordaAndShortCode [] = Left "Keyword and Shortcode not found on the Page"
+    -- toKeywordaAndShortCode (_:[]) = Left "Keyword or Shortcode not found on the Page"
+    -- toKeywordaAndShortCode (a:b:_) = Right (a, b)
 
     safeHead []    = Nothing
     safeHead (x:_) = Just x
@@ -187,9 +195,10 @@ submitMSISDNForMOFlow ::
        C.HttpException
        BS.ByteString
        MOFlowSubmissionResult
-submitMSISDNForMOFlow d h c o m additionalParams = MO.submitMSISDN d h c o m additionalParams
-  -- res <- submitMSISDN' d h c o m additionalParams
-  -- validateMSISDNSubmissionForMOFlow res
+-- submitMSISDNForMOFlow d h c o m additionalParams = MO.submitMSISDN d h c o m additionalParams
+submitMSISDNForMOFlow d h c o m additionalParams = do
+  res <- submitMSISDN' d h c o m additionalParams
+  validateMSISDNSubmissionForMOFlow res
 
 
 
