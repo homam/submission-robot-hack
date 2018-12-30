@@ -27,7 +27,7 @@ import Robot.Helpers (callSAM, sanitize)
 data MOXHRSamAPIResult = MOXHRSamAPIResult {
     status :: Bool
   , smsBody :: T.Text
-  , errors :: T.Text
+  , error :: Maybe T.Text
 } deriving (Show, Read, Eq, Generic, A.ToJSON, A.FromJSON)
 
 toMOFlowSubmissoinResult :: T.Text -> Maybe MOFlowSubmissionResult
@@ -63,7 +63,7 @@ submitMSISDN domain handle country offer msisdn additionalParams = do
   (_url, bs) <- submitMSISDN' domain handle country offer msisdn additionalParams
   case A.decodeStrict bs of
     Nothing -> X.throwE $ APIError UnknownError bs
-    Just (MOXHRSamAPIResult status body _errors) ->
+    Just (MOXHRSamAPIResult status body _error) ->
       if not status 
         then X.throwE $ APIError InvalidMSISDN bs
         else 
