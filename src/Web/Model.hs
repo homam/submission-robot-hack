@@ -45,6 +45,8 @@ import qualified Data.Time.Clock.POSIX            as POSIX
 import qualified Database.Redis                   as R
 import qualified Network.URI                      as U
 import qualified Robot.Sam                        as S
+import Control.Monad.IO.Unlift
+
 
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
@@ -136,7 +138,7 @@ runRedisCommand command = do
   liftIO (run command)
 
 runApp ::
-     (BaseBackend backend ~ SqlBackend, IsPersistBackend backend, MonadBaseControl IO m, MonadIO m)
+     (BaseBackend backend ~ SqlBackend, IsPersistBackend backend, MonadBaseControl IO m, MonadIO m, MonadUnliftIO m)
   => ConnectionString -> (Pool backend -> IO a) -> m a
 runApp connStr appf =
   runNoLoggingT $

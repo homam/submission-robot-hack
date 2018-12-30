@@ -1,0 +1,203 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.31.1.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: d4b33ce7e8eba4a8b2b39f8c6639b9db504251df7542d4dee1366840089f87fa
+
+name:           assrock
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/homam/assrock#readme>
+homepage:       https://github.com/homam/assrock#readme
+bug-reports:    https://github.com/homam/assrock/issues
+author:         Homam
+maintainer:     example@example.com
+copyright:      2018 Homam
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    ChangeLog.md
+
+source-repository head
+  type: git
+  location: https://github.com/homam/assrock
+
+library
+  exposed-modules:
+      Helpers
+      Lib
+      Robot.Helpers
+      Robot.PG
+      Robot.Sam
+      Robot.SamMOXHR
+      Robot.Types
+      Web.AppState
+      Web.JewlModel
+      Web.Localization
+      Web.Model
+      Web.SaleLongPolling
+      Web.Utils.LogMiddleware
+      Web.Visit
+      Web.WebM
+  other-modules:
+      Paths_assrock
+  hs-source-dirs:
+      src
+  build-depends:
+      AES
+    , HUnit
+    , aeson
+    , aeson-pretty
+    , async
+    , base >=4.7 && <5
+    , base64-bytestring
+    , bytestring
+    , case-insensitive
+    , containers
+    , cryptocipher
+    , cryptonite
+    , haquery
+    , hedis
+    , hspec
+    , hspec-expectations
+    , hspec-wai
+    , http-client
+    , http-client-tls
+    , http-conduit
+    , http-types
+    , monad-control
+    , monad-logger
+    , mtl
+    , network-uri
+    , persistent
+    , persistent-postgresql
+    , persistent-postgresql-json
+    , persistent-template
+    , postgresql-simple
+    , random
+    , resource-pool
+    , safe-exceptions
+    , scotty
+    , text
+    , time
+    , transformers
+    , unliftio-core
+    , unordered-containers
+    , uri-encode
+    , utf8-string
+    , wai
+    , wai-extra
+  default-language: Haskell2010
+
+executable assrock-exe
+  main-is: Main.hs
+  other-modules:
+      Paths_assrock
+  hs-source-dirs:
+      app
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      AES
+    , HUnit
+    , aeson
+    , aeson-pretty
+    , assrock
+    , async
+    , base >=4.7 && <5
+    , base64-bytestring
+    , bytestring
+    , case-insensitive
+    , containers
+    , cryptocipher
+    , cryptonite
+    , haquery
+    , hedis
+    , hspec
+    , hspec-expectations
+    , hspec-wai
+    , http-client
+    , http-client-tls
+    , http-conduit
+    , http-types
+    , monad-control
+    , monad-logger
+    , mtl
+    , network-uri
+    , persistent
+    , persistent-postgresql
+    , persistent-postgresql-json
+    , persistent-template
+    , postgresql-simple
+    , random
+    , resource-pool
+    , safe-exceptions
+    , scotty
+    , text
+    , time
+    , transformers
+    , unliftio-core
+    , unordered-containers
+    , uri-encode
+    , utf8-string
+    , wai
+    , wai-extra
+  default-language: Haskell2010
+
+test-suite assrock-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Web
+      Paths_assrock
+  hs-source-dirs:
+      test
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      AES
+    , HUnit
+    , aeson
+    , aeson-pretty
+    , assrock
+    , async
+    , base >=4.7 && <5
+    , base64-bytestring
+    , bytestring
+    , case-insensitive
+    , containers
+    , cryptocipher
+    , cryptonite
+    , haquery
+    , hedis
+    , hspec
+    , hspec-expectations
+    , hspec-wai
+    , http-client
+    , http-client-tls
+    , http-conduit
+    , http-types
+    , monad-control
+    , monad-logger
+    , mtl
+    , network-uri
+    , persistent
+    , persistent-postgresql
+    , persistent-postgresql-json
+    , persistent-template
+    , postgresql-simple
+    , random
+    , resource-pool
+    , safe-exceptions
+    , scotty
+    , text
+    , time
+    , transformers
+    , unliftio-core
+    , unordered-containers
+    , uri-encode
+    , utf8-string
+    , wai
+    , wai-extra
+  default-language: Haskell2010
