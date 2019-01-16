@@ -197,10 +197,11 @@ pinSubmissionAction sid pin = do
     Just (url, submission) -> do
       let country = mSISDNSubmissionCountry submission
       res <- liftIO $ S.runSubmission $ S.submitPIN (E.encodeUtf8 pin) url
-      (sid' :: Integer) <- fromIntegral . fromSqlKey <$> addPINSubmission sid pin res
+      (sid' :: Integer) <- fromIntegral . fromSqlKey <$> addPINSubmission sid pin (fmap fst res)
       let epsid =  encrypt' . show $ sid'
       addScotchHeader "SubmissionId" (TL.pack epsid)
-      json FinalResult { finalUrl = finalUrl' country , finalSubmissionResult = toSubmissionResult (pack epsid) res }
+      let extractedFinalUrl = either (const Nothing) id $ fmap (extractFinalUrl . snd) res
+      json FinalResult { finalUrl = fromMaybe (finalUrl' country) extractedFinalUrl , finalSubmissionResult = toSubmissionResult (pack epsid) res }
     Nothing ->
       let err = TL.pack $ maybe "MSISDN Submission" (const "Final URL") submission' in
       status status500 >> text ("No " <> err <> " was Found for the Given sid: " <> TL.pack (show sid))
@@ -213,6 +214,15 @@ pinSubmissionAction sid pin = do
       finalUrl'' "bh" = "http://bh.game-lords.com/#/?uid=fdf098fcc6"
       finalUrl''  _   = "http://gr.mobiworldbiz.com/?uid=fdf098fcc6&uip=2.84.0.0"
 
+    -- fmap ("https://de-mcb-api.sam-media.com" <>) .
+    extractFinalUrl :: T.Text -> Maybe T.Text
+    extractFinalUrl = ( fmap ("https://de-mcb-api.sam-media.com" <>) . (safeHead =<<) . fmap (T.splitOn "\"") . safeSecond)  . T.splitOn "https://de-mcb-api.sam-media.com"
+
+    safeSecond (_:t:_) = Just t
+    safeSecond _ = Nothing
+
+    safeHead (t:_) = Just t
+    safeHead _ = Nothing
 
 
 msisdnExistsWeb :: WebMApp ()

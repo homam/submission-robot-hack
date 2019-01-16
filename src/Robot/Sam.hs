@@ -137,10 +137,10 @@ isMSISDNEntryPage = contains "numeric-field msisdn"
 isOfferExpiredPage :: T.Text -> Bool
 isOfferExpiredPage = contains "This offer has expired."
 
-validatePINSubmission :: (b, BS.ByteString) -> Submission C.HttpException BS.ByteString b
+validatePINSubmission :: (b, BS.ByteString) -> Submission C.HttpException BS.ByteString (b, T.Text)
 validatePINSubmission (url, bs)
   | or $ sequence [ hasPin, isMSISDNEntryPage, isOfferExpiredPage ] content = X.throwE $ APIError InvalidPIN (either (const bs) E.encodeUtf8 errMsg)
-  | otherwise = return url
+  | otherwise = return (url, content)
   where
     content = E.decodeUtf8 bs
     html = HQ.parseHtml content
@@ -202,7 +202,7 @@ submitMSISDNForMOFlow d h c o m additionalParams = do
 
 
 
-submitPIN :: BS.ByteString -> U.URI -> X.ExceptT (SubmissionError C.HttpException BS.ByteString) IO U.URI
+submitPIN :: BS.ByteString -> U.URI -> X.ExceptT (SubmissionError C.HttpException BS.ByteString) IO (U.URI, T.Text)
 submitPIN p = (validatePINSubmission =<<) . submitPIN' p
 
 -- 6949041021
