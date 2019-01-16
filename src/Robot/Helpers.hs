@@ -40,4 +40,6 @@ sanitize "my" ('6':xs)         = xs
 sanitize "ae" ('9':'7':'1':xs) = '0':xs
 sanitize "ae" ('0':xs) = '0':xs
 sanitize "ae" xs = '0':xs
+sanitize "gh" ('0':xs) = '0':xs
+sanitize "gh" ('2':'3':'3':xs) = '0':xs
 sanitize _ x                   = x

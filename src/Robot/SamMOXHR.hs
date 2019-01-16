@@ -44,6 +44,8 @@ toMOFlowSubmissoinResult = split
       _               -> Nothing
 
 -- http://m.gamezones.biz/my/battleship?device=smart&offer=1&isAjax=1&msisdn%5B0%5D=0174403225&msisdnSubmitted=Y
+
+-- curl "http://w1.mozzi.com/gh/api-handle?country=gh&handle=secure-pro&offer=1&device=smart&isAjax=1&msisdn%5B0%5D=0543959331&msisdnSubmitted=Y"
 submitMSISDN' :: String -> String -> String -> Int -> String -> [(String, String)] -> Submission C.HttpException b (U.URI, BS.ByteString)
 submitMSISDN' domain handle country offer msisdn additionalParams =
   callSAM $ "http://" <> domain <> "/" <> country <> "/" <> handle <>

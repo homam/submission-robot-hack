@@ -37,6 +37,7 @@ import           Network.HTTP.Types.Status (status500)
 import qualified Network.URI               as U
 import qualified Network.Wai               as W
 import qualified Robot.Sam                 as S
+import qualified Robot.SamMOXHR as MO
 import           Web.AppState
 import qualified Web.JewlModel             as JM
 import           Web.Localization          (decrypt', encrypt', toLocalMSISDN)
@@ -162,7 +163,7 @@ msisdnSubmissionAction isMOFlow domain country handle offer msisdn additionalPar
       exists <- liftIO $ msisdnExists appState country msisdn
       res <- if exists
               then return $ Left $ S.APIError S.AlreadySubscribed "AlreadySubscribed From Internal Cache"
-              else liftIO $ S.runSubmission $ S.submitMSISDNForMOFlow (unpack domain) (unpack handle) (unpack country) offer (unpack msisdn) additionalParams'
+              else liftIO $ S.runSubmission $ MO.submitMSISDN (unpack domain) (unpack handle) (unpack country) offer (unpack msisdn) additionalParams'
       (sid :: Integer) <- fromIntegral . fromSqlKey <$> addMSISDNSubmission domain country handle offer msisdn additionalParams (castToUri <$> res)
 
       let psid = pack . encrypt' . show $ sid
