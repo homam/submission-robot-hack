@@ -15,13 +15,15 @@ import qualified Data.ByteString            as BS
 import qualified Network.HTTP.Types.Header  as Header
 import qualified Data.Text as T
 import           GHC.Generics                         (Generic)
+import Network.HTTP.Client.TLS (tlsManagerSettings)
+import Debug.Trace (trace)
 
 callSAM :: String -> Submission C.HttpException b (U.URI, BS.ByteString)
 callSAM url = do
   liftIO $ putStrLn url
   x <- liftIO $ try $ join $ C.withResponseHistory
-      <$> fmap (\ req -> req {C.requestHeaders = (Header.hUserAgent, "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36") : C.requestHeaders req }) (C.parseRequest url)
-      <*> C.newManager C.defaultManagerSettings
+      <$> fmap (\ req -> trace (show req) $ req {C.requestHeaders = (Header.hUserAgent, "Mozilla/5.0") : C.requestHeaders req }) (C.parseRequest url)
+      <*> C.newManager tlsManagerSettings
       <*> return (\hr ->
         (BS.concat <$> C.brConsume (C.responseBody $ C.hrFinalResponse hr) ) >>= \b -> return (C.getUri $ C.hrFinalRequest hr, b)
       )

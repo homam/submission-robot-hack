@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: d4b33ce7e8eba4a8b2b39f8c6639b9db504251df7542d4dee1366840089f87fa
+-- hash: fff347917c19adab420ee64b379b5e7c87d23f8f5186d20127a510cbdd0bfa45
 
 name:           assrock
 version:        0.1.0.0
@@ -19,7 +19,6 @@ license-file:   LICENSE
 build-type:     Simple
 extra-source-files:
     README.md
-    ChangeLog.md
 
 source-repository head
   type: git
