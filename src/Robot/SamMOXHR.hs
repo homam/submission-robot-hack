@@ -34,7 +34,7 @@ toMOFlowSubmissoinResult :: T.Text -> Maybe MOFlowSubmissionResult
 toMOFlowSubmissoinResult = split
   where
     split s = case T.split (== '?') s of
-      [sms,body] -> MOFlowSubmissionResult <$> splitSMS sms <*> splitBody body
+      [sms,body] -> MOFlowSubmissionResult <$> splitBody body <*> splitSMS sms
       _          -> Nothing
     splitSMS s = case T.split (==':') s of
       [_sms, shortcode] -> Just shortcode
@@ -74,8 +74,9 @@ submitMSISDN domain handle country offer msisdn additionalParams = do
             Nothing -> X.throwE $ APIError UnknownError bs -- unable to parse body
             Just res'' -> return res''
 
+-- w1.mozzi.com/gh/api-handl
 main = do
-  finalResult <- X.runExceptT  $ submitMSISDN "m.gamezones.biz" "api-handle" "my" 1 "01123809094" []
+  finalResult <- X.runExceptT  $ submitMSISDN  "w1.mozzi.com" "api-handle" "gh" 1 "0543959335" []-- "m.gamezones.biz" "api-handle" "my" 1 "01123809094" []
   case finalResult of
     Left (NetworkError bs) -> putStrLn "NetworkError" >> print bs
     Left (APIError e bs) -> print e 
