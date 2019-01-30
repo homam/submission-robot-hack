@@ -18,13 +18,14 @@ import qualified Data.Text.Encoding         as E
 import           Database.Persist.TH
 import           GHC.Generics               (Generic)
 import qualified Haquery                    as HQ
+import qualified Network.URI                as U
 
 type Submission e b = X.ExceptT (SubmissionError e b) IO
 data SubmissionError e b = NetworkError e | APIError APIErrorType b deriving (Show)
 
 data MOFlowSubmissionResult = MOFlowSubmissionResult {  keyword :: T.Text, shortcode :: T.Text } deriving (Show, Read, Eq, Ord, Generic, A.ToJSON, A.FromJSON)
 
-data APIErrorType = InvalidMSISDN | InvalidPIN | AlreadySubscribed | ExceededMSISDNSubmissions | UnknownError | UnknownSystemError
+data APIErrorType = InvalidMSISDN | InvalidPIN | AlreadySubscribed (Maybe U.URI) | ExceededMSISDNSubmissions | UnknownError | UnknownSystemError
                   | KeywordAndShortcodeNotFound | LandingPageNotFound | UnableToParseHTML
   deriving Show
 
@@ -38,7 +39,7 @@ toSubmissionErrorType :: SubmissionError e b -> SubmissionErrorType
 toSubmissionErrorType (NetworkError _              ) = SENetworkError
 toSubmissionErrorType (APIError InvalidMSISDN     _) = SEInvalidMSISDN
 toSubmissionErrorType (APIError InvalidPIN        _) = SEInvalidPIN
-toSubmissionErrorType (APIError AlreadySubscribed _) = SEAlreadySubscribed
+toSubmissionErrorType (APIError (AlreadySubscribed _) _) = SEAlreadySubscribed
 toSubmissionErrorType (APIError ExceededMSISDNSubmissions _) =
   SEExceededMSISDNSubmissions
 toSubmissionErrorType (APIError KeywordAndShortcodeNotFound _) =
@@ -47,6 +48,10 @@ toSubmissionErrorType (APIError UnknownError _) = SEUnknownError
 toSubmissionErrorType (APIError LandingPageNotFound _) = SELandingPageNotFound
 toSubmissionErrorType (APIError UnableToParseHTML _) = SEUnableToParseHTML
 toSubmissionErrorType (APIError UnknownSystemError _) = SEUnknownSystemError
+
+getAlradySubscribedUrl :: SubmissionError e b -> Maybe T.Text
+getAlradySubscribedUrl (APIError (AlreadySubscribed u) _) = T.pack . show <$> u
+getAlradySubscribedUrl _ = Nothing
 
 
 runSubmission :: Submission e b a -> IO (Either (SubmissionError e b) a)

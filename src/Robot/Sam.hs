@@ -4,7 +4,7 @@
 module Robot.Sam
 (
     submitMSISDN, submitMSISDNForMOFlow, submitPIN, runSubmission, C.HttpException (..), SubmissionError (..), APIErrorType (..), MOFlowSubmissionResult (..)
-  , SubmissionErrorType (..), toSubmissionErrorType
+  , SubmissionErrorType (..), toSubmissionErrorType, getAlradySubscribedUrl
   , main -- for demonstration purpose only
 ) where
 
@@ -49,11 +49,11 @@ includeErrors :: IsString t => [(t, APIErrorType)]
 includeErrors =
   [ ("لقد تجاوزت الحد"                                       , ExceededMSISDNSubmissions)
   , ("الرقم الذي ادخلته غير صحيح"                               , InvalidMSISDN)
-  , ("Θα λάβεις τώρα τον προσωπικό"                     , AlreadySubscribed)
+  , ("Θα λάβεις τώρα τον προσωπικό"                     , AlreadySubscribed Nothing)
   , ("Ο αριθμός του κινητού σας δεν είναι σωστός"       , InvalidMSISDN)
-  , ("Τώρα έλαβες ένα SMS"                              , AlreadySubscribed)
+  , ("Τώρα έλαβες ένα SMS"                              , AlreadySubscribed Nothing)
   , ("El numero que has introducido no es correcto"     , InvalidMSISDN)
-  , ("Τώρα έλαβες ένα SMS με"                           , AlreadySubscribed)
+  , ("Τώρα έλαβες ένα SMS με"                           , AlreadySubscribed Nothing)
   , ("Error del sistema. Por favor, inténtalo de nuevo.", UnknownSystemError)
   ]
 
@@ -61,9 +61,9 @@ validateMSISDNSubmission :: (U.URI, BS.ByteString) -> Submission C.HttpException
 validateMSISDNSubmission (url, bs)
   | hasPin content = return url
   | otherwise =
-    if Just "mx.combate-extremo.com" == fmap U.uriRegName (U.uriAuthority url)
-      then X.throwE $ APIError AlreadySubscribed bs
-      else maybe (X.throwE $ APIError UnknownError bs) X.throwE err
+    if contains "_extracted" content
+      then maybe (X.throwE $ APIError UnknownError bs) X.throwE err
+      else X.throwE $ APIError (AlreadySubscribed $ Just url) bs
 
   where
     err = either

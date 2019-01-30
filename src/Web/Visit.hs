@@ -66,6 +66,7 @@ toSubmissionResult submissionId' res = SubmissionResult {
   , keyword =  Nothing
   , errorText = Just . submissionErrorToText . S.toSubmissionErrorType ||| const Nothing $ res
   , errorType = (Just . S.toSubmissionErrorType ||| const Nothing $ res)
+  , url = (S.getAlradySubscribedUrl ||| const Nothing $ res)
   }
 
 submissionErrorToText :: IsString p => SubmissionErrorType -> p
@@ -87,6 +88,7 @@ toSubmissionResultForMOFlow submissionId' res = SubmissionResult {
   , keyword =  const Nothing ||| Just $ res
   , errorText = Just . submissionErrorToText . S.toSubmissionErrorType ||| const Nothing $ res
   , errorType = (Just . S.toSubmissionErrorType ||| const Nothing $ res)
+  , url = (S.getAlradySubscribedUrl ||| const Nothing $ res)
   }
 
 data SubmissionResult = SubmissionResult {
@@ -95,6 +97,7 @@ data SubmissionResult = SubmissionResult {
     , keyword      :: Maybe S.MOFlowSubmissionResult
     , submissionId :: Text
     , errorType    :: Maybe S.SubmissionErrorType
+    , url          :: Maybe Text
   } deriving (Eq, Ord, Show, Read, Generic)
 
 instance A.ToJSON SubmissionResult
@@ -152,7 +155,7 @@ msisdnSubmissionAction isMOFlow domain country handle offer msisdn additionalPar
       appState <- lift ask
       exists <- liftIO $ msisdnExists appState country msisdn
       res <- if exists
-              then return $ Left $ S.APIError S.AlreadySubscribed "AlreadySubscribed From Internal Cache"
+              then return $ Left $ S.APIError (S.AlreadySubscribed Nothing) "AlreadySubscribed From Internal Cache"
               else liftIO $ S.runSubmission $ S.submitMSISDN (unpack domain) (unpack handle) (unpack country) offer (unpack msisdn) additionalParams'
       (sid :: Integer) <- fromIntegral . fromSqlKey <$> addMSISDNSubmission domain country handle offer msisdn additionalParams res
       let psid = pack . encrypt' . show $ sid
@@ -162,7 +165,7 @@ msisdnSubmissionAction isMOFlow domain country handle offer msisdn additionalPar
       appState <- lift ask
       exists <- liftIO $ msisdnExists appState country msisdn
       res <- if exists
-              then return $ Left $ S.APIError S.AlreadySubscribed "AlreadySubscribed From Internal Cache"
+              then return $ Left $ S.APIError (S.AlreadySubscribed Nothing) "AlreadySubscribed From Internal Cache"
               else liftIO $ S.runSubmission $ MO.submitMSISDN (unpack domain) (unpack handle) (unpack country) offer (unpack msisdn) additionalParams'
       (sid :: Integer) <- fromIntegral . fromSqlKey <$> addMSISDNSubmission domain country handle offer msisdn additionalParams (castToUri <$> res)
 
