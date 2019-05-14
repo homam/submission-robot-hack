@@ -57,9 +57,9 @@ includeErrors =
   , ("Error del sistema. Por favor, inténtalo de nuevo.", UnknownSystemError)
   ]
 
-validateMSISDNSubmission :: (U.URI, BS.ByteString) -> Submission C.HttpException BS.ByteString U.URI
+validateMSISDNSubmission :: (U.URI, BS.ByteString) -> Submission C.HttpException BS.ByteString (U.URI, Maybe T.Text)
 validateMSISDNSubmission (url, bs)
-  | hasPin content = return url
+  | hasPin content = return (url, actualPIN)
   | otherwise =
     if contains "_extracted" content
       then maybe (X.throwE $ APIError UnknownError bs) X.throwE err
@@ -73,9 +73,13 @@ validateMSISDNSubmission (url, bs)
     content = E.decodeUtf8 bs
     html = HQ.parseHtml content
     errMsg = innerText ".errMsg" html
+    actualPIN = either (const Nothing) id $ HQ.attr "value" . head <$> (HQ.select "input.pin.pin-input"  =<< safeHead' =<< html)
 
     safeHead []    = Nothing
     safeHead (x:_) = Just x
+
+    safeHead' []    = Left "Empty List"
+    safeHead' (x:_) = Right x
 
     lookup' :: (a -> Bool) -> [(a, b)] -> Maybe b
     lookup' p = fmap snd . safeHead . filter (p . fst)
@@ -178,7 +182,7 @@ submitMSISDN ::
   -> Submission
        C.HttpException
        BS.ByteString
-       U.URI
+       (U.URI, Maybe T.Text)
 submitMSISDN d h c o m additionalParams = do
   res <- submitMSISDN' d h c o m additionalParams
   validateMSISDNSubmission res
@@ -215,8 +219,9 @@ main = do
     msisdn <- liftIO $ do
       putStrLn "MSISDN?"
       readLn
-    url <- validateMSISDNSubmission =<< submitMSISDN' "n.mobfun.co" "mobile-arts" "iq" 841 msisdn []
+    (url, actualPIN) <- validateMSISDNSubmission =<< submitMSISDN' "n.mobfun.co" "mobile-arts" "iq" 841 msisdn []
     liftIO $ putStrLn "MSISDN Submission Successful"
+    liftIO $ putStrLn $ "Actual PIN" ++ show actualPIN
     pin <- liftIO $ do
       putStrLn "PIN?"
       readLn

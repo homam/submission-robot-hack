@@ -67,6 +67,18 @@ toSubmissionResult submissionId' res = SubmissionResult {
   , errorText = Just . submissionErrorToText . S.toSubmissionErrorType ||| const Nothing $ res
   , errorType = (Just . S.toSubmissionErrorType ||| const Nothing $ res)
   , url = (S.getAlradySubscribedUrl ||| const Nothing $ res)
+  , actualPIN = Nothing
+  }
+
+toSubmissionResultForMSISDNSubmissionPIN :: Text -> Maybe Text -> Either (S.SubmissionError S.HttpException BS.ByteString) a -> SubmissionResult
+toSubmissionResultForMSISDNSubmissionPIN submissionId' actualPIN res = SubmissionResult {
+    submissionId = submissionId'
+  , isValid = const False ||| const True $ res
+  , keyword =  Nothing
+  , errorText = Just . submissionErrorToText . S.toSubmissionErrorType ||| const Nothing $ res
+  , errorType = (Just . S.toSubmissionErrorType ||| const Nothing $ res)
+  , url = (S.getAlradySubscribedUrl ||| const Nothing $ res)
+  , actualPIN = if (== Just "REMOTE_PIN") actualPIN then Nothing else actualPIN
   }
 
 submissionErrorToText :: IsString p => SubmissionErrorType -> p
@@ -89,6 +101,7 @@ toSubmissionResultForMOFlow submissionId' res = SubmissionResult {
   , errorText = Just . submissionErrorToText . S.toSubmissionErrorType ||| const Nothing $ res
   , errorType = (Just . S.toSubmissionErrorType ||| const Nothing $ res)
   , url = (S.getAlradySubscribedUrl ||| const Nothing $ res)
+  , actualPIN = Nothing
   }
 
 data SubmissionResult = SubmissionResult {
@@ -98,6 +111,7 @@ data SubmissionResult = SubmissionResult {
     , submissionId :: Text
     , errorType    :: Maybe S.SubmissionErrorType
     , url          :: Maybe Text
+    , actualPIN    :: Maybe Text
   } deriving (Eq, Ord, Show, Read, Generic)
 
 instance A.ToJSON SubmissionResult
@@ -126,6 +140,7 @@ msisdnSubmissionWeb =
                               <*> param "handle"
                               <*> param "offer"
                               <*> (pack <$> (toLocalMSISDN <$> (unpack <$> param "country") <*> (unpack <$> param "msisdn")))
+                              <*> ((== "1") . unpack <$> param "return-pin" `rescue` (const $ return "0"))
                               <*> (filter ((/= "msisdn") . fst) <$> queryStringParams)
 
 msisdnSubmissionWebForMOFlow :: WebMApp ()
@@ -137,6 +152,7 @@ msisdnSubmissionWebForMOFlow =
                               <*> param "handle"
                               <*> param "offer"
                               <*> (pack <$> (toLocalMSISDN <$> (unpack <$> param "country") <*> (unpack <$> param "msisdn")))
+                              <*> ((== "1") . unpack <$> param "return-pin" `rescue` (const $ return "0"))
                               <*> (filter ((/= "msisdn") . fst) <$> queryStringParams)
 
 --TODO: break it down into two functions
@@ -147,9 +163,10 @@ msisdnSubmissionAction ::
   -> Text
   -> Int
   -> Text
+  -> Bool
   -> [(Text, Text)]
   -> WebMAction ()
-msisdnSubmissionAction isMOFlow domain country handle offer msisdn additionalParams =
+msisdnSubmissionAction isMOFlow domain country handle offer msisdn returnPIN additionalParams =
   if not isMOFlow
     then do
       appState <- lift ask
@@ -157,10 +174,12 @@ msisdnSubmissionAction isMOFlow domain country handle offer msisdn additionalPar
       res <- if exists
               then return $ Left $ S.APIError (S.AlreadySubscribed Nothing) "AlreadySubscribed From Internal Cache"
               else liftIO $ S.runSubmission $ S.submitMSISDN (unpack domain) (unpack handle) (unpack country) offer (unpack msisdn) additionalParams'
-      (sid :: Integer) <- fromIntegral . fromSqlKey <$> addMSISDNSubmission domain country handle offer msisdn additionalParams res
+      (sid :: Integer) <- fromIntegral . fromSqlKey <$> addMSISDNSubmission domain country handle offer msisdn additionalParams (fmap fst res)
       let psid = pack . encrypt' . show $ sid
+      let actualPIN = either (const Nothing) snd res
       addScotchHeader "SubmissionId" (TL.fromStrict psid)
-      json $ toSubmissionResult psid res
+      addScotchHeader "ActualPIN" $ TL.pack $ show actualPIN
+      json $ toSubmissionResultForMSISDNSubmissionPIN psid (if returnPIN then actualPIN else Nothing) res
     else do -- MOFlow
       appState <- lift ask
       exists <- liftIO $ msisdnExists appState country msisdn

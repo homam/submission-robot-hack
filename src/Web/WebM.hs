@@ -8,7 +8,7 @@
 module Web.WebM (
     module Web.WebM
   , DB.fromSqlKey
-  , ActionT, ScottyT, ScottyError, param, text, json, params, get, post, options, redirect, request, status, header, headers, addHeader, addroute
+  , ActionT, ScottyT, ScottyError, param, text, rescue, json, params, get, post, options, redirect, request, status, header, headers, addHeader, addroute
 ) where
 
 import           Control.Concurrent          (forkIO, killThread, threadDelay)
@@ -39,7 +39,7 @@ import           Web.Scotty.Trans            (ActionT, ScottyError, ScottyT,
                                               headers, json, middleware,
                                               options, param, params, post,
                                               redirect, request, scottyT,
-                                              status, text)
+                                              status, text, rescue)
 import           Web.Utils.LogMiddleware     (logAllMiddleware)
 
 
