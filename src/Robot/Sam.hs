@@ -73,7 +73,7 @@ validateMSISDNSubmission (url, bs)
     content = E.decodeUtf8 bs
     html = HQ.parseHtml content
     errMsg = innerText ".errMsg" html
-    actualPIN = either (const Nothing) id $ HQ.attr "value" . head <$> (HQ.select "input.pin.pin-input"  =<< safeHead' =<< html)
+    actualPIN = either (const Nothing) id $ HQ.attr "value" <$> (safeHead' =<< HQ.select "input.pin.pin-input"  =<< safeHead' =<< html)
 
     safeHead []    = Nothing
     safeHead (x:_) = Just x

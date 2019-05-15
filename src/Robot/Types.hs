@@ -67,7 +67,10 @@ maybeToEither :: e -> Maybe a -> Either e a
 maybeToEither e = maybe (Left e) Right
 
 attrValue :: T.Text -> T.Text -> HQ.Tag -> Either String T.Text
-attrValue attr selector html = maybeToEither "Attribute does not exist" =<< HQ.attr attr . head <$> HQ.select selector html
+attrValue attr selector html = maybeToEither "Attribute does not exist" =<< HQ.attr attr <$> (safeHead' =<< HQ.select selector html)
+  where 
+    safeHead' []    = Left "Empty List"
+    safeHead' (x:_) = Right x
 
 attrValues :: T.Text -> T.Text -> HQ.Tag -> Either String [Maybe T.Text]
 attrValues attr selector h = do
